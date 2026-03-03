@@ -5,8 +5,6 @@ import Leaderboard from './pages/Leaderboard';
 import Admin from './pages/Admin';
 import { QuizProvider } from './context/QuizContext';
 import Sidebar from './components/Sidebar';
-
-// 신규 5대 부가기능 라우트 컴포넌트
 import WrongAnswers from './pages/WrongAnswers';
 import Summary from './pages/Summary';
 import Diary from './pages/Diary';
@@ -18,9 +16,9 @@ function AppLayout() {
   const isWideLayout = location.pathname.startsWith('/summary');
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-800 overflow-hidden font-sans">
+    <div className="min-h-screen bg-[#F2F6FF] font-sans">
       <main
-        className={`w-full mx-auto min-h-screen bg-white shadow-[0_0_40px_rgba(0,0,0,0.05)] relative ${isWideLayout ? 'max-w-5xl' : 'max-w-md'
+        className={`w-full mx-auto min-h-screen bg-[#F2F6FF] relative ${isWideLayout ? 'max-w-5xl' : 'max-w-md'
           }`}
       >
         <Sidebar />

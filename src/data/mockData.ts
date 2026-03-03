@@ -9,7 +9,13 @@ export const MOCK_USERS = [
     { id: 8, name: '임가온', pin: '1234' },
 ];
 
-export const ADMIN_PIN = '0000';
+export const TEACHER_ACCOUNT = {
+    id: 'teacher_admin',
+    name: '임현수 선생님',
+    pin: '0000',
+};
+
+export const ADMIN_PIN = TEACHER_ACCOUNT.pin;
 
 export const WEEKS = [
     { id: 1, title: '1주차', description: '딛 3장 ~ 히 5장' },
