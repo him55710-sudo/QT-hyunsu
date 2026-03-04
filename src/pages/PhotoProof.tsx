@@ -1,73 +1,38 @@
-﻿import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Camera, CheckCircle2, Upload } from 'lucide-react';
+﻿import { useMemo, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { ArrowLeft, CalendarDays, Camera, CheckCircle2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuizContext } from '../context/QuizContext';
 import { MOCK_USERS } from '../data/mockData';
 
-const countMeaningfulChars = (text: string) => text.replace(/\s/g, '').length;
+const toDate = (dateKey: string) => {
+    const [y, m, d] = dateKey.split('-').map(Number);
+    return new Date(y, (m || 1) - 1, d || 1);
+};
+
+const formatDateKey = (dateKey: string) => {
+    const dt = toDate(dateKey);
+    return dt.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' });
+};
 
 export default function PhotoProof() {
     const navigate = useNavigate();
-    const fileInputRef = useRef<HTMLInputElement | null>(null);
+    const { selectedUserId, photoProofs } = useQuizContext();
+    const currentUser = MOCK_USERS.find((u) => u.id === selectedUserId);
 
-    const { selectedUserId, photoProofs, certifyPhotoProof } = useQuizContext();
-    const currentUser = MOCK_USERS.find(u => u.id === selectedUserId);
+    const [selectedProofId, setSelectedProofId] = useState<string | null>(null);
 
-    const [imageFile, setImageFile] = useState<File | null>(null);
-    const [previewUrl, setPreviewUrl] = useState<string>('');
-    const [bestQuestionsText, setBestQuestionsText] = useState('');
-    const [oneVerseText, setOneVerseText] = useState('');
-    const [thankOfferingsText, setThankOfferingsText] = useState('');
-
-    const bestQuestionsLength = useMemo(() => countMeaningfulChars(bestQuestionsText), [bestQuestionsText]);
-    const oneVerseLength = useMemo(() => countMeaningfulChars(oneVerseText), [oneVerseText]);
-    const thankOfferingsLength = useMemo(() => countMeaningfulChars(thankOfferingsText), [thankOfferingsText]);
-
-    const canSubmit = !!imageFile && bestQuestionsLength >= 20 && oneVerseLength >= 20 && thankOfferingsLength >= 20;
     const myProofs = photoProofs[(selectedUserId || '').toString()] || [];
 
-    useEffect(() => {
-        if (!imageFile) {
-            setPreviewUrl('');
-            return;
-        }
+    const sortedProofs = useMemo(
+        () => [...myProofs].sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime()),
+        [myProofs]
+    );
 
-        const objectUrl = URL.createObjectURL(imageFile);
-        setPreviewUrl(objectUrl);
-
-        return () => {
-            URL.revokeObjectURL(objectUrl);
-        };
-    }, [imageFile]);
-
-    const clearForm = () => {
-        setImageFile(null);
-        setBestQuestionsText('');
-        setOneVerseText('');
-        setThankOfferingsText('');
-        if (fileInputRef.current) {
-            fileInputRef.current.value = '';
-        }
-    };
-
-    const handleSubmit = () => {
-        if (!selectedUserId || !imageFile) return;
-
-        const result = certifyPhotoProof(selectedUserId, {
-            imageName: imageFile.name,
-            bestQuestionsLength,
-            oneVerseLength,
-            thankOfferingsLength,
-        });
-
-        if (!result.ok) {
-            alert(result.message);
-            return;
-        }
-
-        alert(`인증 완료! ${result.points}포인트가 지급되었습니다.`);
-        clearForm();
-    };
+    const selectedProof = useMemo(
+        () => sortedProofs.find((proof) => proof.id === selectedProofId) || null,
+        [selectedProofId, sortedProofs]
+    );
 
     if (!selectedUserId) {
         return (
@@ -81,108 +46,94 @@ export default function PhotoProof() {
     }
 
     return (
-        <div className="flex flex-col min-h-[100dvh] bg-slate-50 text-slate-800 p-6">
-            <header className="flex items-center gap-4 mb-6 sticky top-0 bg-slate-50/95 backdrop-blur-sm py-2 z-10">
-                <button
-                    onClick={() => navigate('/')}
-                    className="p-2 bg-white text-slate-600 shadow-sm border border-slate-200 rounded-full hover:bg-slate-100 transition-colors active:scale-95"
-                >
-                    <ArrowLeft className="w-5 h-5" />
-                </button>
-                <h1 className="text-lg font-bold flex items-center gap-2">
-                    <Camera className="w-5 h-5 text-indigo-500" /> 사진 인증 (+10P)
-                </h1>
+        <div className="min-h-[100dvh] bg-[radial-gradient(circle_at_top,#eaf2ff_0%,#f8fbff_45%,#f8fafc_100%)] text-slate-800 pb-10">
+            <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/90 backdrop-blur px-5 pt-12 pb-4">
+                <div className="flex items-center gap-3">
+                    <button
+                        onClick={() => navigate('/')}
+                        className="p-2 bg-white text-slate-600 border border-slate-200 rounded-full active:scale-95"
+                    >
+                        <ArrowLeft className="w-5 h-5" />
+                    </button>
+                    <div>
+                        <h1 className="text-[18px] font-black flex items-center gap-2">
+                            <Camera className="w-5 h-5 text-[#0064FF]" /> 나의 사진 아카이브
+                        </h1>
+                        <p className="text-[12px] text-slate-500 font-bold">{currentUser?.name}님의 저장된 QT 인증 사진</p>
+                    </div>
+                </div>
             </header>
 
-            <main className="flex-1 flex flex-col gap-5">
-                <section className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
-                    <p className="text-sm text-slate-600">
-                        {currentUser?.name} 인증 기준: <strong>Best Questions</strong>, <strong>One Verse</strong>, <strong>Thank Offerings</strong> 각각 20자 이상
-                    </p>
-                </section>
-
-                <section className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4">
-                    <label className="block text-sm font-semibold text-slate-700">1) 사진 업로드</label>
-                    <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept="image/*"
-                        onChange={(e) => setImageFile(e.target.files?.[0] || null)}
-                        className="block w-full text-sm text-slate-600 file:mr-4 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-3 file:py-2 file:text-indigo-600 file:font-semibold"
-                    />
-
-                    {previewUrl && (
-                        <img src={previewUrl} alt="proof preview" className="w-full rounded-xl border border-slate-200 object-cover max-h-72" />
-                    )}
-
-                    <div className="grid gap-3">
-                        <label className="text-sm font-semibold text-slate-700">2) Best Questions 내용</label>
-                        <textarea
-                            value={bestQuestionsText}
-                            onChange={(e) => setBestQuestionsText(e.target.value)}
-                            rows={3}
-                            className="w-full rounded-xl border border-slate-200 p-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
-                        />
-                        <p className={`text-xs ${bestQuestionsLength >= 20 ? 'text-emerald-600' : 'text-rose-500'}`}>
-                            공백 제외 {bestQuestionsLength}자 / 20자 이상
-                        </p>
-
-                        <label className="text-sm font-semibold text-slate-700">3) One Verse 내용</label>
-                        <textarea
-                            value={oneVerseText}
-                            onChange={(e) => setOneVerseText(e.target.value)}
-                            rows={3}
-                            className="w-full rounded-xl border border-slate-200 p-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
-                        />
-                        <p className={`text-xs ${oneVerseLength >= 20 ? 'text-emerald-600' : 'text-rose-500'}`}>
-                            공백 제외 {oneVerseLength}자 / 20자 이상
-                        </p>
-
-                        <label className="text-sm font-semibold text-slate-700">4) Thank Offerings 내용</label>
-                        <textarea
-                            value={thankOfferingsText}
-                            onChange={(e) => setThankOfferingsText(e.target.value)}
-                            rows={3}
-                            className="w-full rounded-xl border border-slate-200 p-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
-                        />
-                        <p className={`text-xs ${thankOfferingsLength >= 20 ? 'text-emerald-600' : 'text-rose-500'}`}>
-                            공백 제외 {thankOfferingsLength}자 / 20자 이상
-                        </p>
+            <main className="px-5 pt-5">
+                {sortedProofs.length === 0 ? (
+                    <div className="bg-white rounded-[18px] border border-slate-200 py-16 text-center text-slate-400">
+                        <Camera className="w-9 h-9 mx-auto mb-2" />
+                        <p className="text-[14px] font-bold">아직 저장된 인증 사진이 없습니다.</p>
                     </div>
-
-                    <button
-                        onClick={handleSubmit}
-                        disabled={!canSubmit}
-                        className="w-full mt-2 px-4 py-3 rounded-xl bg-indigo-600 text-white font-bold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2"
-                    >
-                        <Upload className="w-4 h-4" /> 인증하고 10포인트 받기
-                    </button>
-                </section>
-
-                <section className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
-                    <h2 className="font-bold text-slate-800 mb-3">최근 인증 기록</h2>
-                    {myProofs.length === 0 ? (
-                        <p className="text-sm text-slate-500">아직 인증 기록이 없습니다.</p>
-                    ) : (
-                        <ul className="space-y-2">
-                            {myProofs.slice(0, 5).map((proof) => (
-                                <li key={proof.id} className="text-sm p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-start justify-between gap-3">
-                                    <div>
-                                        <p className="font-semibold text-slate-700">{proof.imageName}</p>
-                                        <p className="text-xs text-slate-500">{proof.submittedAt}</p>
-                                        <p className="text-xs text-slate-500 mt-1">
-                                            BQ {proof.bestQuestionsLength} / OV {proof.oneVerseLength} / TO {proof.thankOfferingsLength}
-                                        </p>
-                                    </div>
-                                    <span className="inline-flex items-center gap-1 text-emerald-600 font-bold text-xs whitespace-nowrap">
-                                        <CheckCircle2 className="w-4 h-4" /> +{proof.points}P
-                                    </span>
-                                </li>
-                            ))}
-                        </ul>
-                    )}
-                </section>
+                ) : (
+                    <div className="grid grid-cols-2 gap-2">
+                        {sortedProofs.map((proof) => (
+                            <button
+                                key={proof.id}
+                                onClick={() => setSelectedProofId(proof.id)}
+                                className="text-left rounded-[14px] border border-slate-200 bg-slate-50 overflow-hidden active:scale-[0.99]"
+                            >
+                                <div className="aspect-[4/3] bg-slate-200">
+                                    {proof.imageDataUrl ? (
+                                        <img src={proof.imageDataUrl} alt="QT 인증 사진" className="w-full h-full object-cover" />
+                                    ) : (
+                                        <div className="w-full h-full flex items-center justify-center text-slate-400">
+                                            <Camera className="w-5 h-5" />
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="p-2.5">
+                                    <p className="text-[11px] font-bold text-slate-500 inline-flex items-center gap-1">
+                                        <CalendarDays className="w-3.5 h-3.5" /> 업로드 {formatDateKey(proof.submittedDateKey)}
+                                    </p>
+                                    <p className="mt-1 text-[11px] font-black text-emerald-600 inline-flex items-center gap-1">
+                                        <CheckCircle2 className="w-3.5 h-3.5" /> +{proof.points}P
+                                    </p>
+                                </div>
+                            </button>
+                        ))}
+                    </div>
+                )}
             </main>
+
+            <AnimatePresence>
+                {selectedProof && (
+                    <motion.div
+                        className="fixed inset-0 z-50 bg-slate-900/75 backdrop-blur-sm p-4 flex items-center justify-center"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        onClick={() => setSelectedProofId(null)}
+                    >
+                        <motion.div
+                            initial={{ scale: 0.94, y: 12 }}
+                            animate={{ scale: 1, y: 0 }}
+                            exit={{ scale: 0.96, y: 8 }}
+                            onClick={(e) => e.stopPropagation()}
+                            className="w-full max-w-md bg-white rounded-[18px] overflow-hidden"
+                        >
+                            {selectedProof.imageDataUrl && (
+                                <img src={selectedProof.imageDataUrl} alt="QT 인증 사진" className="w-full max-h-[60vh] object-cover" />
+                            )}
+                            <div className="p-4 space-y-1.5">
+                                <p className="text-[12px] font-bold text-slate-500">업로드 날짜: {formatDateKey(selectedProof.submittedDateKey)}</p>
+                                <p className="text-[12px] font-black text-emerald-600">+{selectedProof.points}P 획득</p>
+                                <button
+                                    onClick={() => setSelectedProofId(null)}
+                                    className="mt-2 w-full h-10 rounded-[12px] bg-slate-100 text-slate-700 text-[13px] font-black"
+                                >
+                                    닫기
+                                </button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div>
     );
 }

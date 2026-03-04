@@ -12,6 +12,9 @@ export interface PhotoProofSubmission {
     id: string;
     imageName: string;
     submittedAt: string;
+    submittedDateKey: string;
+    imageFingerprint: string;
+    imageDataUrl?: string;
     bestQuestionsLength: number;
     oneVerseLength: number;
     thankOfferingsLength: number;
@@ -33,21 +36,44 @@ type QuizContextType = {
     photoProofs: Record<string, PhotoProofSubmission[]>;
     certifyPhotoProof: (userId: number, payload: {
         imageName: string;
+        imageFingerprint: string;
+        imageDataUrl?: string;
         bestQuestionsLength: number;
         oneVerseLength: number;
         thankOfferingsLength: number;
     }) => { ok: true; points: number } | { ok: false; message: string };
     setScoreEntry: (scoreKey: string, score: number | null) => void;
+    getUserTotalPoints: (userId: number) => number;
+    getUserSpentPoints: (userId: number) => number;
+    getUserCurrentPoints: (userId: number) => number;
+    isWeekPublic: (weekId: number) => boolean;
+    updateWeekVisibility: (weekId: number, isPublic: boolean) => void;
+    weekVisibility: Record<string, boolean>;
 };
 
 const QuizContext = createContext<QuizContextType | undefined>(undefined);
 
 const SCORE_STORAGE_KEY = 'qt_quiz_scores_v3';
-const USER_ONE_RESET_MARKER_KEY = 'qt_quiz_user1_reset_v1';
 const PIN_STORAGE_KEY = 'qt_quiz_pins';
 const WRONG_ANSWER_STORAGE_KEY = 'qt_quiz_wrong_answers_v2';
 const COUPON_STORAGE_KEY = 'qt_quiz_coupons_v2';
 const PHOTO_PROOF_STORAGE_KEY = 'qt_quiz_photo_proofs_v1';
+const PHOTO_PROOF_MIN_CHARS = 15;
+const WEEK_VISIBILITY_STORAGE_KEY = 'qt_quiz_week_visibility_v1';
+const defaultWeekVisibility: Record<string, boolean> = {
+    '1': false,
+    '2': false,
+    '3': false,
+    '4': false,
+    '5': false,
+};
+
+const toDateKey = (date: Date) => {
+    const y = date.getFullYear();
+    const m = `${date.getMonth() + 1}`.padStart(2, '0');
+    const d = `${date.getDate()}`.padStart(2, '0');
+    return `${y}-${m}-${d}`;
+};
 
 export function QuizProvider({ children }: { children: React.ReactNode }) {
     const [selectedUserId, setSelectedUserId] = useState<number | null>(() => {
@@ -113,6 +139,24 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
         return {};
     });
 
+    const [weekVisibility, setWeekVisibility] = useState<Record<string, boolean>>(() => {
+        try {
+            const saved = localStorage.getItem(WEEK_VISIBILITY_STORAGE_KEY);
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                if (typeof parsed === 'object' && parsed !== null) {
+                    return {
+                        ...defaultWeekVisibility,
+                        ...parsed,
+                    };
+                }
+            }
+        } catch (e) {
+            console.error('Failed to parse week visibility', e);
+        }
+        return defaultWeekVisibility;
+    });
+
     useEffect(() => {
         if (selectedUserId !== null) {
             localStorage.setItem('qt_quiz_user_v2', selectedUserId.toString());
@@ -130,6 +174,30 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
     }, [userPins]);
 
     useEffect(() => {
+        setUserPins((prev) => {
+            const defaults: Record<string, string> = {
+                '1': '1234',
+                '2': '1234',
+                '3': '1234',
+                '4': '1234',
+                '5': '1234',
+                '6': '1234',
+                '7': '1234',
+                '8': '1234',
+            };
+            let changed = false;
+            const next = { ...prev };
+            Object.entries(defaults).forEach(([key, value]) => {
+                if (!next[key]) {
+                    next[key] = value;
+                    changed = true;
+                }
+            });
+            return changed ? next : prev;
+        });
+    }, []);
+
+    useEffect(() => {
         localStorage.setItem(WRONG_ANSWER_STORAGE_KEY, JSON.stringify(wrongAnswers));
     }, [wrongAnswers]);
 
@@ -142,34 +210,8 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
     }, [photoProofs]);
 
     useEffect(() => {
-        if (localStorage.getItem(USER_ONE_RESET_MARKER_KEY)) return;
-
-        setScores(prev => Object.fromEntries(Object.entries(prev).filter(([key]) => !key.startsWith('1_'))));
-
-        setWrongAnswers(prev => {
-            if (!prev['1']) return prev;
-            const next = { ...prev };
-            delete next['1'];
-            return next;
-        });
-
-        setPurchasedCoupons(prev => {
-            if (!prev['1']) return prev;
-            const next = { ...prev };
-            delete next['1'];
-            return next;
-        });
-
-        setPhotoProofs(prev => {
-            if (!prev['1']) return prev;
-            const next = { ...prev };
-            delete next['1'];
-            return next;
-        });
-
-        localStorage.removeItem('qt_quiz_diary_v3_1');
-        localStorage.setItem(USER_ONE_RESET_MARKER_KEY, 'done');
-    }, []);
+        localStorage.setItem(WEEK_VISIBILITY_STORAGE_KEY, JSON.stringify(weekVisibility));
+    }, [weekVisibility]);
 
     const saveScore = (userId: number, weekId: number, score: number) => {
         setScores(prev => ({
@@ -192,7 +234,7 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
             isNewlyMarked = true;
             return {
                 ...prev,
-                [attendanceKey]: 20,
+                [attendanceKey]: 10,
             };
         });
 
@@ -252,19 +294,32 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
 
     const certifyPhotoProof = (userId: number, payload: {
         imageName: string;
+        imageFingerprint: string;
+        imageDataUrl?: string;
         bestQuestionsLength: number;
         oneVerseLength: number;
         thankOfferingsLength: number;
     }) => {
-        if (
-            payload.bestQuestionsLength < 20 ||
-            payload.oneVerseLength < 20 ||
-            payload.thankOfferingsLength < 20
-        ) {
-            return { ok: false as const, message: 'All three sections must be at least 20 chars.' };
+        const todayKey = toDateKey(new Date());
+        const userProofs = photoProofs[userId.toString()] || [];
+
+        if (userProofs.some((proof) => proof.submittedDateKey === todayKey)) {
+            return { ok: false as const, message: '하루에 1번만 사진 인증이 가능합니다.' };
         }
 
-        const awardedPoints = 10;
+        if (userProofs.some((proof) => proof.imageFingerprint === payload.imageFingerprint)) {
+            return { ok: false as const, message: '이전에 통과한 사진과 동일한 이미지입니다. 새 사진으로 인증해주세요.' };
+        }
+
+        if (
+            payload.bestQuestionsLength < PHOTO_PROOF_MIN_CHARS ||
+            payload.oneVerseLength < PHOTO_PROOF_MIN_CHARS ||
+            payload.thankOfferingsLength < PHOTO_PROOF_MIN_CHARS
+        ) {
+            return { ok: false as const, message: `판독 기준 미달: 각 항목 최소 ${PHOTO_PROOF_MIN_CHARS}자 필요` };
+        }
+
+        const awardedPoints = 20;
         const proofId = Date.now().toString() + Math.random().toString(36).slice(2, 7);
 
         setScores(prev => ({
@@ -276,6 +331,9 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
             id: proofId,
             imageName: payload.imageName,
             submittedAt: new Date().toLocaleString('ko-KR'),
+            submittedDateKey: todayKey,
+            imageFingerprint: payload.imageFingerprint,
+            imageDataUrl: payload.imageDataUrl,
             bestQuestionsLength: payload.bestQuestionsLength,
             oneVerseLength: payload.oneVerseLength,
             thankOfferingsLength: payload.thankOfferingsLength,
@@ -298,11 +356,41 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
                 delete next[scoreKey];
                 return next;
             }
+            const normalized = Math.floor(score);
+            const isManualAdjustment = scoreKey.endsWith('_manual_adjustment');
             return {
                 ...prev,
-                [scoreKey]: Math.max(0, Math.floor(score)),
+                [scoreKey]: isManualAdjustment ? normalized : Math.max(0, normalized),
             };
         });
+    };
+
+    const getUserTotalPoints = (userId: number) => {
+        let total = 0;
+        Object.entries(scores).forEach(([key, value]) => {
+            if (key.startsWith(`${userId}_`)) total += value;
+        });
+        return total;
+    };
+
+    const getUserSpentPoints = (userId: number) => {
+        const userCoupons = purchasedCoupons[userId.toString()] || [];
+        return userCoupons.reduce((sum, coupon) => sum + coupon.price, 0);
+    };
+
+    const getUserCurrentPoints = (userId: number) => {
+        return getUserTotalPoints(userId) - getUserSpentPoints(userId);
+    };
+
+    const isWeekPublic = (weekId: number) => {
+        return Boolean(weekVisibility[weekId.toString()]);
+    };
+
+    const updateWeekVisibility = (weekId: number, isPublic: boolean) => {
+        setWeekVisibility(prev => ({
+            ...prev,
+            [weekId.toString()]: isPublic,
+        }));
     };
 
     return (
@@ -322,6 +410,12 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
                 photoProofs,
                 certifyPhotoProof,
                 setScoreEntry,
+                getUserTotalPoints,
+                getUserSpentPoints,
+                getUserCurrentPoints,
+                isWeekPublic,
+                updateWeekVisibility,
+                weekVisibility,
             }}
         >
             {children}

@@ -10,15 +10,16 @@ import Summary from './pages/Summary';
 import Diary from './pages/Diary';
 import Community from './pages/Community';
 import Store from './pages/Store';
+import PhotoProof from './pages/PhotoProof';
 
 function AppLayout() {
   const location = useLocation();
   const isWideLayout = location.pathname.startsWith('/summary');
 
   return (
-    <div className="min-h-screen bg-[#F2F6FF] font-sans">
+    <div className="min-h-screen bg-transparent font-sans px-2 py-2 md:px-4 md:py-4">
       <main
-        className={`w-full mx-auto min-h-screen bg-[#F2F6FF] relative ${isWideLayout ? 'max-w-5xl' : 'max-w-md'
+        className={`w-full mx-auto min-h-screen bg-white relative rounded-[32px] md:rounded-[40px] shadow-[var(--qt-soft-shadow)] overflow-hidden ${isWideLayout ? 'max-w-5xl' : 'max-w-md'
           }`}
       >
         <Sidebar />
@@ -32,6 +33,7 @@ function AppLayout() {
           <Route path="/diary" element={<Diary />} />
           <Route path="/community" element={<Community />} />
           <Route path="/store" element={<Store />} />
+          <Route path="/photo-proof" element={<PhotoProof />} />
         </Routes>
       </main>
     </div>

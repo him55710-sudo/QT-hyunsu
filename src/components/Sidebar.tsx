@@ -1,7 +1,7 @@
 ﻿import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { AlertCircle, BookOpen, Home, Menu, MessageSquare, PenTool, Settings, Store, Trophy, X } from 'lucide-react';
+import { AlertCircle, BookOpen, Camera, Home, LogOut, Menu, MessageSquare, PenTool, Settings, Store, Trophy, X } from 'lucide-react';
 import { useQuizContext } from '../context/QuizContext';
 import { MOCK_USERS } from '../data/mockData';
 
@@ -9,11 +9,16 @@ export default function Sidebar() {
     const [isOpen, setIsOpen] = useState(false);
     const navigate = useNavigate();
     const location = useLocation();
-    const { selectedUserId } = useQuizContext();
+    const { selectedUserId, setSelectedUserId } = useQuizContext();
     const currentUser = MOCK_USERS.find((u) => u.id === selectedUserId);
 
     useEffect(() => { setIsOpen(false); }, [location.pathname]);
     const handleNavigation = (path: string) => { navigate(path); setIsOpen(false); };
+    const handleLogout = () => {
+        setSelectedUserId(null);
+        navigate('/');
+        setIsOpen(false);
+    };
 
     const navItems = [
         { path: '/', icon: Home, label: '홈' },
@@ -22,6 +27,7 @@ export default function Sidebar() {
         { path: '/diary', icon: PenTool, label: '큐티 일기' },
         { path: '/community', icon: MessageSquare, label: '커뮤니티' },
         { path: '/store', icon: Store, label: '포인트 교환소' },
+        { path: '/photo-proof', icon: Camera, label: '내 사진 저장소' },
         { path: '/leaderboard', icon: Trophy, label: '명예의 전당' },
     ];
 
@@ -84,6 +90,14 @@ export default function Sidebar() {
                                     className="flex items-center gap-3 w-full text-left px-4 py-3 rounded-[14px] text-[#B0B8C1] hover:bg-blue-50 hover:text-[#0064FF] transition-all font-bold text-[13px] active:scale-[0.98]">
                                     <Settings className="w-4 h-4 shrink-0" />관리자 메뉴
                                 </button>
+                                {currentUser && (
+                                    <button
+                                        onClick={handleLogout}
+                                        className="mt-2 flex items-center gap-3 w-full text-left px-4 py-3 rounded-[14px] text-[#B0B8C1] hover:bg-red-50 hover:text-red-500 transition-all font-bold text-[13px] active:scale-[0.98]"
+                                    >
+                                        <LogOut className="w-4 h-4 shrink-0" />로그아웃
+                                    </button>
+                                )}
                             </div>
                         </motion.div>
                     </>

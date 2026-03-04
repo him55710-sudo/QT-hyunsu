@@ -7,13 +7,13 @@ import { MOCK_USERS, WEEKS } from '../data/mockData';
 
 export default function Leaderboard() {
     const navigate = useNavigate();
-    const { scores } = useQuizContext();
+    const { scores, getUserTotalPoints } = useQuizContext();
     const leaderboard = useMemo(() => {
         return MOCK_USERS.map(user => {
             const weeklyScores = WEEKS.map(week => ({ weekId: week.id, score: scores[`${user.id}_${week.id}`] || 0 }));
-            return { ...user, totalScore: weeklyScores.reduce((s, w) => s + w.score, 0), weeklyScores };
+            return { ...user, totalScore: getUserTotalPoints(user.id), weeklyScores };
         }).sort((a, b) => b.totalScore - a.totalScore);
-    }, [scores]);
+    }, [scores, getUserTotalPoints]);
 
     return (
         <div className="flex flex-col min-h-screen bg-[#F2F6FF] p-5 pt-14">

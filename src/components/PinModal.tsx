@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Lock, X } from 'lucide-react';
 
@@ -28,7 +28,6 @@ export default function PinModal({ isOpen, onClose, onSuccess, expectedPin, titl
             setError(false);
 
             if (newPin.length === 4) {
-                // Verify PIN
                 setTimeout(() => {
                     if (newPin === expectedPin) {
                         onSuccess();
@@ -42,7 +41,7 @@ export default function PinModal({ isOpen, onClose, onSuccess, expectedPin, titl
     };
 
     const handleDelete = () => {
-        setPin(prev => prev.slice(0, -1));
+        setPin((prev) => prev.slice(0, -1));
         setError(false);
     };
 
@@ -62,11 +61,12 @@ export default function PinModal({ isOpen, onClose, onSuccess, expectedPin, titl
                         initial={{ opacity: 0, scale: 0.95, y: 20 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                        className="relative w-full max-w-sm bg-white rounded-3xl shadow-2xl p-6 border border-slate-100 overflow-hidden"
+                        className="relative w-full max-w-sm bg-white rounded-[32px] shadow-[var(--qt-soft-shadow)] p-7 overflow-hidden"
                     >
                         <button
                             onClick={onClose}
-                            className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors"
+                            className="absolute top-4 right-4 hidden sm:inline-flex p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors"
+                            aria-label="닫기"
                         >
                             <X className="w-5 h-5" />
                         </button>
@@ -79,7 +79,6 @@ export default function PinModal({ isOpen, onClose, onSuccess, expectedPin, titl
                             <p className="text-sm text-slate-500 font-medium">비밀번호 4자리를 입력해주세요</p>
                         </div>
 
-                        {/* PIN Dots */}
                         <motion.div
                             animate={error ? { x: [-10, 10, -10, 10, 0] } : {}}
                             transition={{ duration: 0.4 }}
@@ -103,13 +102,12 @@ export default function PinModal({ isOpen, onClose, onSuccess, expectedPin, titl
                             </p>
                         )}
 
-                        {/* Keypad */}
                         <div className="grid grid-cols-3 gap-3">
                             {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((num) => (
                                 <button
                                     key={num}
                                     onClick={() => handleNumberClick(num)}
-                                    className="h-14 bg-slate-50 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 rounded-2xl text-xl font-semibold transition-colors active:scale-95 shadow-sm border border-slate-100"
+                                    className="h-14 bg-[#F2F6FF] hover:bg-blue-50 text-slate-700 hover:text-[#0064FF] rounded-2xl text-[20px] font-bold transition-all active:scale-95 border-transparent"
                                 >
                                     {num}
                                 </button>
@@ -117,15 +115,24 @@ export default function PinModal({ isOpen, onClose, onSuccess, expectedPin, titl
                             <div className="h-14"></div>
                             <button
                                 onClick={() => handleNumberClick(0)}
-                                className="h-14 bg-slate-50 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 rounded-2xl text-xl font-semibold transition-colors active:scale-95 shadow-sm border border-slate-100"
+                                className="h-14 bg-[#F2F6FF] hover:bg-blue-50 text-slate-700 hover:text-[#0064FF] rounded-2xl text-[20px] font-bold transition-all active:scale-95 border-transparent"
                             >
                                 0
                             </button>
                             <button
                                 onClick={handleDelete}
-                                className="h-14 flex items-center justify-center bg-slate-50 hover:bg-slate-100 text-slate-500 hover:text-slate-700 rounded-2xl transition-colors active:scale-95 shadow-sm border border-slate-100"
+                                className="h-14 flex items-center justify-center bg-[#F2F6FF] hover:bg-slate-100 text-slate-500 hover:text-slate-700 rounded-2xl transition-all active:scale-95 border-transparent"
                             >
                                 <X className="w-6 h-6" />
+                            </button>
+                        </div>
+
+                        <div className="mt-5 sm:hidden flex justify-end">
+                            <button
+                                onClick={onClose}
+                                className="text-[14px] font-bold text-[#0064FF] px-1 py-1"
+                            >
+                                닫기
                             </button>
                         </div>
                     </motion.div>
