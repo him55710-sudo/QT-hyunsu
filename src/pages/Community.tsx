@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, MessageSquare, Heart, Send, Search } from 'lucide-react';
+import { ArrowLeft, MessageSquare, Heart, Send } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useQuizContext } from '../context/QuizContext';
