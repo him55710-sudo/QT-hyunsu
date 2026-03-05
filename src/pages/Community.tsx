@@ -1,35 +1,39 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ArrowLeft, MessageSquare, Heart, Send, Search } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useQuizContext } from '../context/QuizContext';
 import { MOCK_USERS } from '../data/mockData';
-
-// 커뮤니티는 빈 피드에서 시작합니다.
-const INITIAL_POSTS: {
-    id: string;
-    authorId: number;
-    authorName: string;
-    content: string;
-    timestamp: string;
-    likes: number;
-    comments: {
-        id: string;
-        authorName: string;
-        content: string;
-        timestamp: string;
-    }[];
-}[] = [];
+// 👇 Firebase에서 필요한 기능들 불러오기
+import { collection, addDoc, onSnapshot, query, orderBy, doc, updateDoc, arrayUnion, arrayRemove, increment } from 'firebase/firestore';
+import { db } from '../firebase'; // 방금 만든 파일 연결
 
 export default function Community() {
     const navigate = useNavigate();
     const { selectedUserId } = useQuizContext();
     const currentUser = MOCK_USERS.find(u => u.id === selectedUserId);
 
-    const [posts, setPosts] = useState(INITIAL_POSTS);
+    const [posts, setPosts] = useState<any[]>([]);
     const [newPostContent, setNewPostContent] = useState('');
     const [commentInput, setCommentInput] = useState<{ [key: string]: string }>({});
-    const [likedPosts, setLikedPosts] = useState<Set<string>>(new Set());
+
+    // 1. 실시간으로 게시글 불러오기 (Firebase 연동)
+    useEffect(() => {
+        // 'posts'라는 폴더(컬렉션)에서 글을 가져오되, 작성시간(createdAt) 기준 내림차순(최신순)으로 가져옵니다.
+        const q = query(collection(db, 'posts'), orderBy('createdAt', 'desc'));
+
+        // onSnapshot: 누군가 새 글을 쓰면 자동으로 화면을 업데이트해줍니다.
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const fetchedPosts = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+            setPosts(fetchedPosts);
+        });
+
+        // 컴포넌트가 꺼질 때 실시간 연결 해제
+        return () => unsubscribe();
+    }, []);
 
     if (!selectedUserId) {
         return (
@@ -40,65 +44,65 @@ export default function Community() {
         );
     }
 
-    const handleCreatePost = (e: React.FormEvent) => {
+    // 2. 새 글 쓰기
+    const handleCreatePost = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!newPostContent.trim()) return;
+        if (!newPostContent.trim() || !currentUser) return;
 
-        const newPost = {
-            id: Date.now().toString(),
-            authorId: selectedUserId,
-            authorName: currentUser?.name || '익명',
+        // Firebase에 새 글 저장
+        await addDoc(collection(db, 'posts'), {
+            authorId: currentUser.id,
+            authorName: currentUser.name,
             content: newPostContent,
-            timestamp: '방금 전',
+            createdAt: Date.now(), // 정렬을 위한 시간
+            timestamp: new Date().toLocaleString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }), // 화면 표시용 시간
             likes: 0,
-            comments: []
-        };
+            likedBy: [], // 좋아요 누른 사람 기록
+            comments: [] // 댓글 목록
+        });
 
-        setPosts([newPost, ...posts]);
         setNewPostContent('');
     };
 
-    const handleAddComment = (postId: string, e: React.FormEvent) => {
+    // 3. 댓글 달기
+    const handleAddComment = async (postId: string, e: React.FormEvent) => {
         e.preventDefault();
         const content = commentInput[postId];
-        if (!content?.trim()) return;
+        if (!content?.trim() || !currentUser) return;
 
-        setPosts(prev => prev.map(post => {
-            if (post.id === postId) {
-                return {
-                    ...post,
-                    comments: [...post.comments, {
-                        id: Date.now().toString(),
-                        authorName: currentUser?.name || '익명',
-                        content,
-                        timestamp: '방금 전'
-                    }]
-                };
-            }
-            return post;
-        }));
+        // Firebase의 특정 게시물에 댓글 추가
+        const postRef = doc(db, 'posts', postId);
+        await updateDoc(postRef, {
+            comments: arrayUnion({
+                id: Date.now().toString(),
+                authorName: currentUser.name,
+                content: content,
+                timestamp: '방금 전'
+            })
+        });
 
         setCommentInput(prev => ({ ...prev, [postId]: '' }));
     };
 
-    const toggleLike = (postId: string) => {
-        setLikedPosts(prev => {
-            const newSet = new Set(prev);
-            if (newSet.has(postId)) {
-                newSet.delete(postId);
-            } else {
-                newSet.add(postId);
-            }
-            return newSet;
-        });
+    // 4. 좋아요 누르기
+    const toggleLike = async (postId: string, postLikedBy: number[]) => {
+        if (!currentUser) return;
+        const postRef = doc(db, 'posts', postId);
+        const hasLiked = postLikedBy?.includes(currentUser.id);
 
-        setPosts(prev => prev.map(post => {
-            if (post.id === postId) {
-                const isDisliking = likedPosts.has(postId);
-                return { ...post, likes: post.likes + (isDisliking ? -1 : 1) };
-            }
-            return post;
-        }));
+        if (hasLiked) {
+            // 이미 좋아요를 눌렀다면 취소
+            await updateDoc(postRef, {
+                likes: increment(-1),
+                likedBy: arrayRemove(currentUser.id)
+            });
+        } else {
+            // 안 눌렀다면 좋아요 추가
+            await updateDoc(postRef, {
+                likes: increment(1),
+                likedBy: arrayUnion(currentUser.id)
+            });
+        }
     };
 
     return (
@@ -113,9 +117,6 @@ export default function Community() {
                         고등부 나눔 게시판
                     </h1>
                 </div>
-                <button className="p-2 text-slate-400 hover:text-indigo-500 transition-colors">
-                    <Search className="w-5 h-5" />
-                </button>
             </header>
 
             <main className="flex-1 overflow-y-auto pb-10">
@@ -167,7 +168,6 @@ export default function Community() {
                                         <div>
                                             <div className="font-bold text-[15px] flex items-center gap-1">
                                                 {post.authorName}
-                                                {post.authorId === 999 && <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-md">선생님</span>}
                                             </div>
                                             <div className="text-[11px] text-slate-400 font-medium">{post.timestamp}</div>
                                         </div>
@@ -182,25 +182,27 @@ export default function Community() {
                                 {/* 좋아요 및 댓글 수 통계 */}
                                 <div className="flex items-center gap-4 py-3 border-y border-slate-50 mb-3 text-sm text-slate-500 font-medium">
                                     <button
-                                        onClick={() => toggleLike(post.id)}
-                                        className={`flex items-center gap-1.5 transition-colors ${likedPosts.has(post.id) ? 'text-rose-500' : 'hover:text-rose-500'}`}
+                                        onClick={() => toggleLike(post.id, post.likedBy || [])}
+                                        className={`flex items-center gap-1.5 transition-colors ${post.likedBy?.includes(currentUser?.id) ? 'text-rose-500' : 'hover:text-rose-500'}`}
                                     >
-                                        <Heart className={`w-4 h-4 ${likedPosts.has(post.id) ? 'fill-rose-500' : ''}`} />
+                                        <Heart className={`w-4 h-4 ${post.likedBy?.includes(currentUser?.id) ? 'fill-rose-500' : ''}`} />
                                         좋아요 {post.likes}
                                     </button>
                                     <div className="flex items-center gap-1.5">
                                         <MessageSquare className="w-4 h-4" />
-                                        댓글 {post.comments.length}
+                                        댓글 {post.comments?.length || 0}
                                     </div>
                                 </div>
 
                                 {/* 댓글 목록 */}
-                                {post.comments.length > 0 && (
+                                {post.comments?.length > 0 && (
                                     <div className="flex flex-col gap-3 mb-4 bg-slate-50/50 p-3 rounded-2xl">
-                                        {post.comments.map(comment => (
-                                            <div key={comment.id} className="text-sm">
-                                                <span className="font-bold text-slate-800 mr-2">{comment.authorName}</span>
-                                                <span className="text-slate-600">{comment.content}</span>
+                                        {post.comments.map((comment: any) => (
+                                            <div key={comment.id} className="text-sm flex flex-col gap-0.5">
+                                                <div>
+                                                    <span className="font-bold text-slate-800 mr-2">{comment.authorName}</span>
+                                                    <span className="text-slate-600">{comment.content}</span>
+                                                </div>
                                             </div>
                                         ))}
                                     </div>

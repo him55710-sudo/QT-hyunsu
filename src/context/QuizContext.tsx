@@ -21,6 +21,20 @@ export interface PhotoProofSubmission {
     points: number;
 }
 
+type QuizBackupPayload = {
+    version: number;
+    exportedAt: string;
+    data: {
+        selectedUserId: number | null;
+        scores: Record<string, number>;
+        userPins: Record<string, string>;
+        wrongAnswers: Record<string, number[]>;
+        purchasedCoupons: Record<string, PurchasedCoupon[]>;
+        photoProofs: Record<string, PhotoProofSubmission[]>;
+        weekVisibility: Record<string, boolean>;
+    };
+};
+
 type QuizContextType = {
     selectedUserId: number | null;
     setSelectedUserId: (id: number | null) => void;
@@ -49,6 +63,8 @@ type QuizContextType = {
     isWeekPublic: (weekId: number) => boolean;
     updateWeekVisibility: (weekId: number, isPublic: boolean) => void;
     weekVisibility: Record<string, boolean>;
+    exportBackup: () => string;
+    importBackup: (raw: string) => { ok: true } | { ok: false; message: string };
 };
 
 const QuizContext = createContext<QuizContextType | undefined>(undefined);
@@ -60,6 +76,7 @@ const COUPON_STORAGE_KEY = 'qt_quiz_coupons_v2';
 const PHOTO_PROOF_STORAGE_KEY = 'qt_quiz_photo_proofs_v1';
 const PHOTO_PROOF_MIN_CHARS = 15;
 const WEEK_VISIBILITY_STORAGE_KEY = 'qt_quiz_week_visibility_v1';
+const BACKUP_VERSION = 1;
 const defaultWeekVisibility: Record<string, boolean> = {
     '1': false,
     '2': false,
@@ -393,6 +410,70 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
         }));
     };
 
+    const exportBackup = () => {
+        const payload: QuizBackupPayload = {
+            version: BACKUP_VERSION,
+            exportedAt: new Date().toISOString(),
+            data: {
+                selectedUserId,
+                scores,
+                userPins,
+                wrongAnswers,
+                purchasedCoupons,
+                photoProofs,
+                weekVisibility,
+            },
+        };
+        return JSON.stringify(payload, null, 2);
+    };
+
+    const importBackup = (raw: string) => {
+        try {
+            const parsed = JSON.parse(raw) as Partial<QuizBackupPayload>;
+            if (!parsed || typeof parsed !== 'object') {
+                return { ok: false as const, message: '백업 파일 형식이 올바르지 않습니다.' };
+            }
+            if (!parsed.data || typeof parsed.data !== 'object') {
+                return { ok: false as const, message: '백업 데이터가 없습니다.' };
+            }
+
+            const incomingSelectedUserId = parsed.data.selectedUserId;
+            const incomingScores = parsed.data.scores;
+            const incomingPins = parsed.data.userPins;
+            const incomingWrongAnswers = parsed.data.wrongAnswers;
+            const incomingCoupons = parsed.data.purchasedCoupons;
+            const incomingPhotoProofs = parsed.data.photoProofs;
+            const incomingWeekVisibility = parsed.data.weekVisibility;
+
+            if (
+                (incomingSelectedUserId !== null && typeof incomingSelectedUserId !== 'number') ||
+                typeof incomingScores !== 'object' || incomingScores === null ||
+                typeof incomingPins !== 'object' || incomingPins === null ||
+                typeof incomingWrongAnswers !== 'object' || incomingWrongAnswers === null ||
+                typeof incomingCoupons !== 'object' || incomingCoupons === null ||
+                typeof incomingPhotoProofs !== 'object' || incomingPhotoProofs === null ||
+                typeof incomingWeekVisibility !== 'object' || incomingWeekVisibility === null
+            ) {
+                return { ok: false as const, message: '백업 데이터 검증에 실패했습니다.' };
+            }
+
+            setSelectedUserId(incomingSelectedUserId ?? null);
+            setScores(incomingScores as Record<string, number>);
+            setUserPins(incomingPins as Record<string, string>);
+            setWrongAnswers(incomingWrongAnswers as Record<string, number[]>);
+            setPurchasedCoupons(incomingCoupons as Record<string, PurchasedCoupon[]>);
+            setPhotoProofs(incomingPhotoProofs as Record<string, PhotoProofSubmission[]>);
+            setWeekVisibility({
+                ...defaultWeekVisibility,
+                ...(incomingWeekVisibility as Record<string, boolean>),
+            });
+
+            return { ok: true as const };
+        } catch {
+            return { ok: false as const, message: '백업 파일을 읽는 중 오류가 발생했습니다.' };
+        }
+    };
+
     return (
         <QuizContext.Provider
             value={{
@@ -416,6 +497,8 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
                 isWeekPublic,
                 updateWeekVisibility,
                 weekVisibility,
+                exportBackup,
+                importBackup,
             }}
         >
             {children}

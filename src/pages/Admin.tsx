@@ -1,6 +1,6 @@
-﻿import { useEffect, useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, BarChart3, KeyRound, Lock, LockOpen, Save, ShieldAlert, Users } from 'lucide-react';
+import { ArrowLeft, BarChart3, Download, KeyRound, Lock, LockOpen, Save, ShieldAlert, Upload, Users } from 'lucide-react';
 import { useQuizContext } from '../context/QuizContext';
 import { ADMIN_PIN, MOCK_USERS, TEACHER_ACCOUNT, WEEKS } from '../data/mockData';
 import ChangePinModal from '../components/ChangePinModal';
@@ -15,12 +15,13 @@ const toNumberOrNull = (value: string): number | null => {
 
 export default function Admin() {
     const navigate = useNavigate();
-    const { scores, userPins, updatePin, setScoreEntry, getUserTotalPoints, getUserSpentPoints, getUserCurrentPoints, isWeekPublic, updateWeekVisibility } = useQuizContext();
+    const { scores, userPins, updatePin, setScoreEntry, getUserTotalPoints, getUserSpentPoints, getUserCurrentPoints, isWeekPublic, updateWeekVisibility, exportBackup, importBackup } = useQuizContext();
 
     const [isChangePinModalOpen, setIsChangePinModalOpen] = useState(false);
     const [currentPointDrafts, setCurrentPointDrafts] = useState<Record<number, string>>({});
     const [isAdminVerified, setIsAdminVerified] = useState(false);
     const [isAdminPinModalOpen, setIsAdminPinModalOpen] = useState(true);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         setIsAdminVerified(false);
@@ -105,6 +106,40 @@ export default function Admin() {
         alert('현재 포인트가 저장되었습니다.');
     };
 
+    const handleDownloadBackup = () => {
+        const backupRaw = exportBackup();
+        const blob = new Blob([backupRaw], { type: 'application/json;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        const today = new Date().toISOString().slice(0, 10);
+
+        anchor.href = url;
+        anchor.download = `qt-quiz-backup-${today}.json`;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        URL.revokeObjectURL(url);
+    };
+
+    const handleBackupFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        try {
+            const raw = await file.text();
+            const result = importBackup(raw);
+            if (result.ok) {
+                alert('백업 복원이 완료되었습니다.');
+            } else {
+                alert(result.message);
+            }
+        } catch {
+            alert('파일을 읽을 수 없습니다. 다시 시도해주세요.');
+        } finally {
+            if (fileInputRef.current) fileInputRef.current.value = '';
+        }
+    };
+
     return (
         <div className="flex flex-col min-h-screen bg-[#F8FAFC]">
             <header className="px-5 pt-14 pb-4 sticky top-0 bg-[#F8FAFC]/95 z-20 border-b border-slate-200">
@@ -186,6 +221,37 @@ export default function Admin() {
                             <p className="mt-3 text-[11px] text-[#8B95A1] font-bold">
                                 * 기본값은 비공개이며, 공개로 변경한 주차만 학생이 입장할 수 있습니다.
                             </p>
+                        </div>
+
+                        <div className="bg-white border border-slate-200 rounded-[18px] p-4 mb-4">
+                            <div className="flex items-center gap-2 mb-3">
+                                <Users className="w-4 h-4 text-[#0064FF]" />
+                                <h2 className="text-[14px] font-black text-[#8B95A1]">기기 변경 데이터 이전</h2>
+                            </div>
+                            <p className="text-[12px] text-[#8B95A1] font-bold leading-relaxed">
+                                현재 기기에서 백업 파일을 저장한 뒤, 새 기기 관리자 페이지에서 파일을 업로드하면 전체 데이터가 복원됩니다.
+                            </p>
+                            <div className="mt-3 flex flex-col sm:flex-row gap-2">
+                                <button
+                                    onClick={handleDownloadBackup}
+                                    className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-[12px] bg-[#0064FF] text-white text-[13px] font-black hover:bg-[#0056db] active:scale-95"
+                                >
+                                    <Download className="w-4 h-4" /> 백업 다운로드
+                                </button>
+                                <button
+                                    onClick={() => fileInputRef.current?.click()}
+                                    className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-[12px] bg-white border border-slate-300 text-[#4E5968] text-[13px] font-black hover:bg-[#F8FAFC] active:scale-95"
+                                >
+                                    <Upload className="w-4 h-4" /> 백업 복원
+                                </button>
+                                <input
+                                    ref={fileInputRef}
+                                    type="file"
+                                    accept="application/json,.json"
+                                    className="hidden"
+                                    onChange={handleBackupFileChange}
+                                />
+                            </div>
                         </div>
 
                         <div className="flex items-center gap-2 mb-4">
@@ -296,3 +362,4 @@ export default function Admin() {
         </div>
     );
 }
+
