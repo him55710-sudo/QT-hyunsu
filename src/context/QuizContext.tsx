@@ -1,6 +1,13 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { doc, setDoc, onSnapshot, deleteField } from 'firebase/firestore';
 import { db } from '../firebase';
+import { ADMIN_PIN, MOCK_USERS } from '../data/mockData';
+
+export interface User {
+    id: number;
+    name: string;
+    pin?: string;
+}
 
 export interface PurchasedCoupon {
     id: string;
@@ -38,6 +45,8 @@ type QuizBackupPayload = {
 };
 
 type QuizContextType = {
+    users: User[];
+    addUser: (name: string, pin: string) => void;
     selectedUserId: number | null;
     setSelectedUserId: (id: number | null) => void;
     scores: Record<string, number>;
@@ -95,6 +104,8 @@ const toDateKey = (date: Date) => {
 };
 
 export function QuizProvider({ children }: { children: React.ReactNode }) {
+    const [users, setUsers] = useState<User[]>(MOCK_USERS);
+
     const [selectedUserId, setSelectedUserId] = useState<number | null>(() => {
         const saved = localStorage.getItem('qt_quiz_user_v2');
         return saved ? parseInt(saved, 10) : null;
@@ -199,10 +210,47 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
         }
     };
 
+    const pushUserUpdate = async (newUser: User) => {
+        try {
+            await setDoc(doc(db, 'global_state', 'users'), {
+                [newUser.id]: newUser,
+            }, { merge: true });
+        } catch (e) {
+            console.error('Firebase save error:', e);
+        }
+    };
+
+    useEffect(() => {
+        const unsub = onSnapshot(doc(db, 'global_state', 'users'), (snapshot) => {
+            if (snapshot.exists()) {
+                const data = snapshot.data();
+                const fetchedUsers = Object.values(data) as User[];
+                const cmap = new Map<number, User>();
+                MOCK_USERS.forEach((u) => cmap.set(u.id, u));
+                fetchedUsers.forEach((u) => cmap.set(u.id, u));
+                setUsers(Array.from(cmap.values()).sort((a, b) => a.id - b.id));
+            } else {
+                setUsers([...MOCK_USERS]);
+            }
+        });
+        return () => unsub();
+    }, []);
+
+    const addUser = (name: string, pin: string) => {
+        const currentIds = users.filter(u => u.id < 900).map(u => u.id);
+        const nextId = currentIds.length > 0 ? Math.max(...currentIds) + 1 : 1;
+        const newUser: User = { id: nextId, name, pin };
+        pushUserUpdate(newUser);
+        setUserPins((prev) => {
+             if (prev[nextId.toString()]) return prev;
+             return { ...prev, [nextId.toString()]: pin };
+        });
+    };
+
     useEffect(() => {
         const unsub = onSnapshot(doc(db, 'global_state', 'scores'), (snapshot) => {
             if (snapshot.exists()) {
-                setScores(prev => ({ ...prev, ...snapshot.data() }));
+                setScores((prev) => ({ ...prev, ...snapshot.data() }));
             }
         });
         return () => unsub();
@@ -228,6 +276,7 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
                 '7': '1234',
                 '8': '1234',
                 '999': '0000',
+                admin: ADMIN_PIN,
             };
             let changed = false;
             const next = { ...prev };
@@ -237,6 +286,12 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
                     changed = true;
                 }
             });
+
+            if (!/^\d{6}$/.test(next.admin || '')) {
+                next.admin = ADMIN_PIN;
+                changed = true;
+            }
+
             return changed ? next : prev;
         });
     }, []);
@@ -496,9 +551,14 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
                 return { ok: false as const, message: '백업 데이터 검증에 실패했습니다.' };
             }
 
+            const normalizedPins = { ...(incomingPins as Record<string, string>) };
+            if (!/^\d{6}$/.test(normalizedPins.admin || '')) {
+                normalizedPins.admin = ADMIN_PIN;
+            }
+
             setSelectedUserId(incomingSelectedUserId ?? null);
             setScores(incomingScores as Record<string, number>);
-            setUserPins(incomingPins as Record<string, string>);
+            setUserPins(normalizedPins);
             setWrongAnswers(incomingWrongAnswers as Record<string, number[]>);
             setPurchasedCoupons(incomingCoupons as Record<string, PurchasedCoupon[]>);
             setPhotoProofs(incomingPhotoProofs as Record<string, PhotoProofSubmission[]>);
@@ -516,6 +576,8 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
     return (
         <QuizContext.Provider
             value={{
+                users,
+                addUser,
                 selectedUserId,
                 setSelectedUserId,
                 scores,

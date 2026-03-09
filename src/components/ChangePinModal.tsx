@@ -8,9 +8,10 @@ interface ChangePinModalProps {
     onSuccess: (newPin: string) => void;
     currentPin: string;
     title: string;
+    pinLength?: number;
 }
 
-export default function ChangePinModal({ isOpen, onClose, onSuccess, currentPin, title }: ChangePinModalProps) {
+export default function ChangePinModal({ isOpen, onClose, onSuccess, currentPin, title, pinLength = 4 }: ChangePinModalProps) {
     const [step, setStep] = useState<'verify' | 'new'>('verify');
     const [pin, setPin] = useState('');
     const [error, setError] = useState(false);
@@ -24,12 +25,12 @@ export default function ChangePinModal({ isOpen, onClose, onSuccess, currentPin,
     }, [isOpen]);
 
     const handleNumberClick = (num: number) => {
-        if (pin.length < 4) {
+        if (pin.length < pinLength) {
             const newPin = pin + num;
             setPin(newPin);
             setError(false);
 
-            if (newPin.length === 4) {
+            if (newPin.length === pinLength) {
                 setTimeout(() => {
                     if (step === 'verify') {
                         if (newPin === currentPin) {
@@ -88,7 +89,7 @@ export default function ChangePinModal({ isOpen, onClose, onSuccess, currentPin,
                                     <>
                                         <span className="text-emerald-600 font-bold">새 비밀번호</span>
                                         <ArrowRight className="w-3 h-3 text-emerald-400" />
-                                        <span>4자리 입력</span>
+                                        <span>{pinLength}자리 입력</span>
                                     </>
                                 )}
                             </p>
@@ -99,7 +100,7 @@ export default function ChangePinModal({ isOpen, onClose, onSuccess, currentPin,
                             transition={{ duration: 0.4 }}
                             className="flex justify-center gap-4 mb-8"
                         >
-                            {[0, 1, 2, 3].map((i) => (
+                            {Array.from({ length: pinLength }, (_, i) => (
                                 <div
                                     key={i}
                                     className={`w-4 h-4 rounded-full transition-all duration-200 ${

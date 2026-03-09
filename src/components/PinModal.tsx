@@ -8,9 +8,10 @@ interface PinModalProps {
     onSuccess: () => void;
     expectedPin: string;
     title: string;
+    pinLength?: number;
 }
 
-export default function PinModal({ isOpen, onClose, onSuccess, expectedPin, title }: PinModalProps) {
+export default function PinModal({ isOpen, onClose, onSuccess, expectedPin, title, pinLength = 4 }: PinModalProps) {
     const [pin, setPin] = useState('');
     const [error, setError] = useState(false);
 
@@ -22,12 +23,12 @@ export default function PinModal({ isOpen, onClose, onSuccess, expectedPin, titl
     }, [isOpen]);
 
     const handleNumberClick = (num: number) => {
-        if (pin.length < 4) {
+        if (pin.length < pinLength) {
             const newPin = pin + num;
             setPin(newPin);
             setError(false);
 
-            if (newPin.length === 4) {
+            if (newPin.length === pinLength) {
                 setTimeout(() => {
                     if (newPin === expectedPin) {
                         onSuccess();
@@ -76,7 +77,7 @@ export default function PinModal({ isOpen, onClose, onSuccess, expectedPin, titl
                                 <Lock className="w-6 h-6 text-indigo-500" />
                             </div>
                             <h2 className="text-xl font-bold text-slate-800 mb-1">{title}</h2>
-                            <p className="text-sm text-slate-500 font-medium">비밀번호 4자리를 입력해주세요</p>
+                            <p className="text-sm text-slate-500 font-medium">비밀번호 {pinLength}자리를 입력해주세요</p>
                         </div>
 
                         <motion.div
@@ -84,7 +85,7 @@ export default function PinModal({ isOpen, onClose, onSuccess, expectedPin, titl
                             transition={{ duration: 0.4 }}
                             className="flex justify-center gap-4 mb-8"
                         >
-                            {[0, 1, 2, 3].map((i) => (
+                            {Array.from({ length: pinLength }, (_, i) => (
                                 <div
                                     key={i}
                                     className={`w-4 h-4 rounded-full transition-all duration-200 ${error

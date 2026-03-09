@@ -3,13 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Crown, Medal } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useQuizContext } from '../context/QuizContext';
-import { MOCK_USERS, WEEKS } from '../data/mockData';
+import { WEEKS } from '../data/mockData';
 
 export default function Leaderboard() {
     const navigate = useNavigate();
-    const { scores, getUserTotalPoints } = useQuizContext();
+    const { scores, getUserTotalPoints, users } = useQuizContext();
     const leaderboard = useMemo(() => {
-        return MOCK_USERS.map(user => {
+        return users.map(user => {
             const weeklyScores = WEEKS.map(week => ({ weekId: week.id, score: scores[`${user.id}_${week.id}`] || 0 }));
             return { ...user, totalScore: getUserTotalPoints(user.id), weeklyScores };
         }).sort((a, b) => b.totalScore - a.totalScore);

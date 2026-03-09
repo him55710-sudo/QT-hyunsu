@@ -3,14 +3,13 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { AlertCircle, BookOpen, Camera, Home, LogOut, Menu, MessageSquare, PenTool, Settings, Store, Trophy, X } from 'lucide-react';
 import { useQuizContext } from '../context/QuizContext';
-import { MOCK_USERS } from '../data/mockData';
 
 export default function Sidebar() {
     const [isOpen, setIsOpen] = useState(false);
     const navigate = useNavigate();
     const location = useLocation();
-    const { selectedUserId, setSelectedUserId } = useQuizContext();
-    const currentUser = MOCK_USERS.find((u) => u.id === selectedUserId);
+    const { selectedUserId, setSelectedUserId, users } = useQuizContext();
+    const currentUser = users.find((u) => u.id === selectedUserId);
 
     useEffect(() => { setIsOpen(false); }, [location.pathname]);
     const handleNavigation = (path: string) => { navigate(path); setIsOpen(false); };

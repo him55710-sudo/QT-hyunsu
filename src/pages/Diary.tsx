@@ -3,7 +3,6 @@ import { ArrowLeft, PenTool, Plus, X, Calendar, Edit3, Trash2 } from 'lucide-rea
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useQuizContext } from '../context/QuizContext';
-import { MOCK_USERS } from '../data/mockData';
 
 interface DiaryEntry {
     id: string;
@@ -16,8 +15,8 @@ const getDiaryStorageKey = (userId: number) => `qt_quiz_diary_v3_${userId}`;
 
 export default function Diary() {
     const navigate = useNavigate();
-    const { selectedUserId } = useQuizContext();
-    const currentUser = MOCK_USERS.find(u => u.id === selectedUserId);
+    const { selectedUserId, users } = useQuizContext();
+    const currentUser = users.find(u => u.id === selectedUserId);
 
     const [entries, setEntries] = useState<DiaryEntry[]>(() => {
         if (!selectedUserId) return [];

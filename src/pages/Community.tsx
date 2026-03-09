@@ -3,15 +3,14 @@ import { ArrowLeft, MessageSquare, Heart, Send } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useQuizContext } from '../context/QuizContext';
-import { MOCK_USERS } from '../data/mockData';
 // 👇 Firebase에서 필요한 기능들 불러오기
 import { collection, addDoc, onSnapshot, query, orderBy, doc, updateDoc, arrayUnion, arrayRemove, increment } from 'firebase/firestore';
 import { db } from '../firebase'; // 방금 만든 파일 연결
 
 export default function Community() {
     const navigate = useNavigate();
-    const { selectedUserId } = useQuizContext();
-    const currentUser = MOCK_USERS.find(u => u.id === selectedUserId);
+    const { selectedUserId, users } = useQuizContext();
+    const currentUser = users.find(u => u.id === selectedUserId);
 
     const [posts, setPosts] = useState<any[]>([]);
     const [newPostContent, setNewPostContent] = useState('');

@@ -13,7 +13,7 @@
 export const TEACHER_ACCOUNT = {
     id: 'teacher_admin',
     name: '임현수 선생님',
-    pin: '0000',
+    pin: '000000',
 };
 
 export const ADMIN_PIN = TEACHER_ACCOUNT.pin;

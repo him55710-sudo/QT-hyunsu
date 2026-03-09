@@ -2,13 +2,13 @@
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, BarChart3, Download, KeyRound, Lock, LockOpen, ShieldAlert, Upload, Users } from 'lucide-react';
 import { useQuizContext } from '../context/QuizContext';
-import { ADMIN_PIN, MOCK_USERS, TEACHER_ACCOUNT, WEEKS } from '../data/mockData';
+import { ADMIN_PIN, TEACHER_ACCOUNT, WEEKS } from '../data/mockData';
 import ChangePinModal from '../components/ChangePinModal';
 import PinModal from '../components/PinModal';
 
 export default function Admin() {
     const navigate = useNavigate();
-    const { scores, userPins, updatePin, getUserTotalPoints, getUserSpentPoints, getUserCurrentPoints, isWeekPublic, updateWeekVisibility, exportBackup, importBackup } = useQuizContext();
+    const { scores, userPins, updatePin, getUserTotalPoints, getUserSpentPoints, getUserCurrentPoints, isWeekPublic, updateWeekVisibility, exportBackup, importBackup, users } = useQuizContext();
 
     const [isChangePinModalOpen, setIsChangePinModalOpen] = useState(false);
     const [isAdminVerified, setIsAdminVerified] = useState(false);
@@ -27,7 +27,7 @@ export default function Admin() {
     };
 
     const studentData = useMemo(() => {
-        return MOCK_USERS.map((user) => {
+        return users.map((user) => {
             const weeklyTotal = WEEKS.reduce((sum, week) => sum + (scores[`${user.id}_${week.id}`] || 0), 0);
 
             const attendanceDays = Object.keys(scores).filter(
@@ -268,6 +268,7 @@ export default function Admin() {
                 onSuccess={handleAdminPinChange}
                 currentPin={userPins.admin || ADMIN_PIN}
                 title={`${TEACHER_ACCOUNT.name} 관리자 비밀번호`}
+                pinLength={6}
             />
             <PinModal
                 isOpen={isAdminPinModalOpen}
@@ -281,8 +282,8 @@ export default function Admin() {
                 }}
                 expectedPin={userPins.admin || ADMIN_PIN}
                 title="임현수"
+                pinLength={6}
             />
         </div>
     );
 }
-

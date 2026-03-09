@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { BookOpen, Camera, Check, ChevronLeft, ChevronRight, Lock, RotateCcw, Search, Star, Trophy, UserCheck } from 'lucide-react';
-import { ADMIN_PIN, MOCK_USERS, WEEKS } from '../data/mockData';
+import { ADMIN_PIN, WEEKS } from '../data/mockData';
 import { useQuizContext } from '../context/QuizContext';
 import PinModal from '../components/PinModal';
 import ChangePinModal from '../components/ChangePinModal';
@@ -167,8 +167,9 @@ const chooseBestSummary = (summaries: OcrSummary[]) => {
 
 export default function Home() {
     const navigate = useNavigate();
-    const { selectedUserId, setSelectedUserId, markAttendance, scores, certifyPhotoProof, photoProofs, userPins, updatePin, isWeekPublic } = useQuizContext();
+    const { selectedUserId, setSelectedUserId, markAttendance, scores, certifyPhotoProof, photoProofs, userPins, updatePin, isWeekPublic, users, addUser } = useQuizContext();
 
+    const [newUserName, setNewUserName] = useState('');
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const [showAttendanceToast, setShowAttendanceToast] = useState(false);
@@ -184,7 +185,7 @@ export default function Home() {
     const [calendarYear, setCalendarYear] = useState(now.getFullYear());
     const [calendarMonth, setCalendarMonth] = useState(now.getMonth());
 
-    const currentUser = MOCK_USERS.find((u) => u.id === selectedUserId);
+    const currentUser = users.find((u) => u.id === selectedUserId);
 
     const totalPoints = useMemo(() => {
         if (!selectedUserId) return 0;
@@ -202,9 +203,9 @@ export default function Home() {
         }
     }, [selectedUserId, markAttendance]);
 
-    const handleUserSelect = (user: (typeof MOCK_USERS)[number]) => {
+    const handleUserSelect = (user: (typeof users)[number]) => {
         if (selectedUserId === user.id) return;
-        setPinModalConfig({ isOpen: true, expectedPin: userPins[user.id.toString()] || user.pin, title: `${user.name} 로그인`, targetId: user.id });
+        setPinModalConfig({ isOpen: true, expectedPin: userPins[user.id.toString()] || user.pin || '1234', title: `${user.name} 로그인`, targetId: user.id });
     };
 
     const handlePinSuccess = () => {
@@ -390,16 +391,39 @@ export default function Home() {
                     </div>
 
                     {!selectedUserId ? (
-                        <div className="grid grid-cols-2 gap-2">
-                            {MOCK_USERS.map((user) => (
+                        <div className="flex flex-col gap-3">
+                            <div className="grid grid-cols-2 gap-2">
+                                {users.map((user) => (
+                                    <button
+                                        key={user.id}
+                                        onClick={() => handleUserSelect(user)}
+                                        className="py-3 px-4 rounded-[14px] font-black text-[14px] transition-all active:scale-95 bg-[#F2F6FF] text-[#4E5968] hover:bg-blue-50"
+                                    >
+                                        {user.name}
+                                    </button>
+                                ))}
+                            </div>
+                            <div className="mt-2 flex items-center gap-2 bg-[#F2F6FF] rounded-[14px] p-2 border border-blue-50">
+                                <input
+                                    type="text"
+                                    value={newUserName}
+                                    onChange={(e) => setNewUserName(e.target.value)}
+                                    placeholder="새 사용자 이름"
+                                    className="flex-1 py-2 px-3 rounded-[10px] text-[13px] border border-blue-100 focus:outline-none focus:ring-2 focus:ring-[#0064FF] text-[#191F28] font-bold"
+                                />
                                 <button
-                                    key={user.id}
-                                    onClick={() => handleUserSelect(user)}
-                                    className="py-3 px-4 rounded-[14px] font-black text-[14px] transition-all active:scale-95 bg-[#F2F6FF] text-[#4E5968] hover:bg-blue-50"
+                                    onClick={() => {
+                                        if (newUserName.trim() !== '') {
+                                            addUser(newUserName.trim(), '1234');
+                                            setNewUserName('');
+                                            alert(`'${newUserName.trim()}' 사용자가 추가되었습니다. (초기 비밀번호: 1234)`);
+                                        }
+                                    }}
+                                    className="px-4 py-2.5 bg-[#0064FF] text-white rounded-[10px] text-[13px] font-black active:scale-95 transition-all w-max whitespace-nowrap"
                                 >
-                                    {user.name}
+                                    + 추가
                                 </button>
-                            ))}
+                            </div>
                         </div>
                     ) : (
                         <div className="bg-[#F2F6FF] rounded-[14px] p-4">
@@ -475,9 +499,8 @@ export default function Home() {
                                         initial={{ opacity: 0, y: 8 }}
                                         animate={{ opacity: 1, y: 0 }}
                                         exit={{ opacity: 0 }}
-                                        className={`mt-3 p-4 rounded-[14px] text-[13px] font-bold whitespace-pre-line ${
-                                            ocrResult.ok ? 'bg-blue-50 text-[#0064FF] border border-blue-100' : 'bg-red-50 text-red-500 border border-red-100'
-                                        }`}
+                                        className={`mt-3 p-4 rounded-[14px] text-[13px] font-bold whitespace-pre-line ${ocrResult.ok ? 'bg-blue-50 text-[#0064FF] border border-blue-100' : 'bg-red-50 text-red-500 border border-red-100'
+                                            }`}
                                     >
                                         {ocrResult.ok && <Check className="w-4 h-4 inline mr-1.5" />}
                                         {ocrResult.message}
@@ -524,9 +547,8 @@ export default function Home() {
                             const isDone = attendanceDays.has(day);
                             return (
                                 <div key={day} className="flex items-center justify-center">
-                                    <div className={`w-8 h-8 flex items-center justify-center rounded-full text-xs font-black transition-all ${
-                                        isDone ? 'bg-[#0064FF] text-white shadow-[0_2px_8px_rgba(0,100,255,0.3)]' : isToday ? 'border-2 border-[#0064FF] text-[#0064FF]' : 'text-[#8B95A1] hover:bg-blue-50'
-                                    }`}>
+                                    <div className={`w-8 h-8 flex items-center justify-center rounded-full text-xs font-black transition-all ${isDone ? 'bg-[#0064FF] text-white shadow-[0_2px_8px_rgba(0,100,255,0.3)]' : isToday ? 'border-2 border-[#0064FF] text-[#0064FF]' : 'text-[#8B95A1] hover:bg-blue-50'
+                                        }`}>
                                         {isDone ? <Check className="w-3.5 h-3.5" /> : day}
                                     </div>
                                 </div>
@@ -549,21 +571,19 @@ export default function Home() {
                             <button
                                 key={week.id}
                                 onClick={() => handleWeekClick(week.id)}
-                                className={`flex items-center justify-between p-4 rounded-[16px] transition-all active:scale-[0.98] group ${
-                                    isWeekPublic(week.id)
-                                        ? 'bg-[#F2F6FF] hover:bg-blue-50'
-                                        : 'bg-slate-100 text-[#8B95A1] border border-slate-200'
-                                }`}
+                                className={`flex items-center justify-between p-4 rounded-[16px] transition-all active:scale-[0.98] group ${isWeekPublic(week.id)
+                                    ? 'bg-[#F2F6FF] hover:bg-blue-50'
+                                    : 'bg-slate-100 text-[#8B95A1] border border-slate-200'
+                                    }`}
                             >
                                 <div className="text-left">
                                     <h3 className={`font-black text-[14px] transition-colors ${isWeekPublic(week.id) ? 'text-[#191F28] group-hover:text-[#0064FF]' : 'text-[#8B95A1]'}`}>{week.title}</h3>
                                     <p className="text-[12px] text-[#8B95A1] mt-0.5">{week.description}</p>
                                 </div>
-                                <div className={`w-7 h-7 rounded-full border flex items-center justify-center transition-all shadow-sm ${
-                                    isWeekPublic(week.id)
-                                        ? 'bg-white group-hover:bg-[#0064FF] border-blue-100'
-                                        : 'bg-white border-slate-200'
-                                }`}>
+                                <div className={`w-7 h-7 rounded-full border flex items-center justify-center transition-all shadow-sm ${isWeekPublic(week.id)
+                                    ? 'bg-white group-hover:bg-[#0064FF] border-blue-100'
+                                    : 'bg-white border-slate-200'
+                                    }`}>
                                     {isWeekPublic(week.id) ? (
                                         <span className="text-[#8B95A1] group-hover:text-white text-base leading-none translate-x-px font-black transition-colors">›</span>
                                     ) : (
@@ -586,6 +606,7 @@ export default function Home() {
                 onSuccess={handlePinSuccess}
                 expectedPin={pinModalConfig.expectedPin}
                 title={pinModalConfig.title}
+                pinLength={pinModalConfig.targetId === 'admin' ? 6 : 4}
             />
 
             {currentUser && (
@@ -593,7 +614,7 @@ export default function Home() {
                     isOpen={isChangePinModalOpen}
                     onClose={() => setIsChangePinModalOpen(false)}
                     onSuccess={handleChangePinSuccess}
-                    currentPin={userPins[currentUser.id.toString()] || currentUser.pin}
+                    currentPin={userPins[currentUser.id.toString()] || currentUser.pin || '1234'}
                     title={`${currentUser.name} 비밀번호 변경`}
                 />
             )}

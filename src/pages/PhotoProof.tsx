@@ -3,7 +3,6 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { ArrowLeft, CalendarDays, Camera, CheckCircle2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuizContext } from '../context/QuizContext';
-import { MOCK_USERS } from '../data/mockData';
 
 const toDate = (dateKey: string) => {
     const [y, m, d] = dateKey.split('-').map(Number);
@@ -17,8 +16,8 @@ const formatDateKey = (dateKey: string) => {
 
 export default function PhotoProof() {
     const navigate = useNavigate();
-    const { selectedUserId, photoProofs } = useQuizContext();
-    const currentUser = MOCK_USERS.find((u) => u.id === selectedUserId);
+    const { selectedUserId, photoProofs, users } = useQuizContext();
+    const currentUser = users.find((u) => u.id === selectedUserId);
 
     const [selectedProofId, setSelectedProofId] = useState<string | null>(null);
 

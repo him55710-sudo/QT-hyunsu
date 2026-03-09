@@ -4,7 +4,6 @@ import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import confetti from 'canvas-confetti';
 import { useQuizContext } from '../context/QuizContext';
-import { MOCK_USERS } from '../data/mockData';
 
 const STORE_ITEMS = [
     { id: 'item_500', title: '카페 음료 1잔', price: 1000, desc: '아메리카노 또는 탄산음료', icon: '🥤', color: '#f4a261' },
@@ -15,9 +14,9 @@ const STORE_ITEMS = [
 export default function Store() {
     const navigate = useNavigate();
     const [activeTab, setActiveTab] = useState<'shop' | 'inventory'>('shop');
-    const { selectedUserId, purchasedCoupons, buyCoupon, getUserTotalPoints, getUserSpentPoints, getUserCurrentPoints } = useQuizContext();
+    const { selectedUserId, purchasedCoupons, buyCoupon, getUserTotalPoints, getUserSpentPoints, getUserCurrentPoints, users } = useQuizContext();
 
-    const currentUser = MOCK_USERS.find((u) => u.id === selectedUserId);
+    const currentUser = users.find((u) => u.id === selectedUserId);
     const totalScore = useMemo(() => (selectedUserId ? getUserTotalPoints(selectedUserId) : 0), [selectedUserId, getUserTotalPoints]);
     const myCoupons = useMemo(() => (selectedUserId ? (purchasedCoupons[selectedUserId.toString()] || []) : []), [purchasedCoupons, selectedUserId]);
     const spentPoints = useMemo(() => (selectedUserId ? getUserSpentPoints(selectedUserId) : 0), [selectedUserId, getUserSpentPoints, myCoupons]);

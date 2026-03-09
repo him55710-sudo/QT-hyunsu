@@ -4,12 +4,12 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useQuizContext } from '../context/QuizContext';
 import { QUIZ_DATA } from '../data/quizData';
-import { MOCK_USERS, WEEKS } from '../data/mockData';
+import { WEEKS } from '../data/mockData';
 
 export default function WrongAnswers() {
     const navigate = useNavigate();
-    const { selectedUserId, wrongAnswers } = useQuizContext();
-    const currentUser = MOCK_USERS.find(u => u.id === selectedUserId);
+    const { selectedUserId, wrongAnswers, users } = useQuizContext();
+    const currentUser = users.find(u => u.id === selectedUserId);
     const myWrongList = useMemo(() => {
         if (!selectedUserId) return [];
         const myAnswerIds = wrongAnswers[selectedUserId.toString()] || [];
