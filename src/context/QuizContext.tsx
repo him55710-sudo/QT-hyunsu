@@ -227,6 +227,7 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
                 '6': '1234',
                 '7': '1234',
                 '8': '1234',
+                '999': '0000',
             };
             let changed = false;
             const next = { ...prev };

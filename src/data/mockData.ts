@@ -7,6 +7,7 @@
     { id: 6, name: '석연준', pin: '1234' },
     { id: 7, name: '서은율', pin: '1234' },
     { id: 8, name: '이주아', pin: '1234' },
+    { id: 999, name: '임현수', pin: '0000' },
 ];
 
 export const TEACHER_ACCOUNT = {
