@@ -1,4 +1,6 @@
-﻿import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState } from 'react';
+import { doc, setDoc, onSnapshot, deleteField } from 'firebase/firestore';
+import { db } from '../firebase';
 
 export interface PurchasedCoupon {
     id: string;
@@ -182,6 +184,30 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
         }
     }, [selectedUserId]);
 
+    // Firebase Sync for Scores
+    const pushScoreUpdate = async (updateObj: Record<string, number | null>) => {
+        try {
+            const safeObj: any = { ...updateObj };
+            for (const key in safeObj) {
+                if (safeObj[key] === null) {
+                    safeObj[key] = deleteField();
+                }
+            }
+            await setDoc(doc(db, 'global_state', 'scores'), safeObj, { merge: true });
+        } catch (e) {
+            console.error('Firebase save error:', e);
+        }
+    };
+
+    useEffect(() => {
+        const unsub = onSnapshot(doc(db, 'global_state', 'scores'), (snapshot) => {
+            if (snapshot.exists()) {
+                setScores(prev => ({ ...prev, ...snapshot.data() }));
+            }
+        });
+        return () => unsub();
+    }, []);
+
     useEffect(() => {
         localStorage.setItem(SCORE_STORAGE_KEY, JSON.stringify(scores));
     }, [scores]);
@@ -231,10 +257,15 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
     }, [weekVisibility]);
 
     const saveScore = (userId: number, weekId: number, score: number) => {
-        setScores(prev => ({
-            ...prev,
-            [`${userId}_${weekId}`]: Math.max(prev[`${userId}_${weekId}`] || 0, score),
-        }));
+        setScores(prev => {
+            const key = `${userId}_${weekId}`;
+            const newScore = Math.max(prev[key] || 0, score);
+            pushScoreUpdate({ [key]: newScore });
+            return {
+                ...prev,
+                [key]: newScore,
+            };
+        });
     };
 
     const markAttendance = (userId: number) => {
@@ -249,6 +280,7 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
             if (prev[attendanceKey]) return prev;
 
             isNewlyMarked = true;
+            pushScoreUpdate({ [attendanceKey]: 10 });
             return {
                 ...prev,
                 [attendanceKey]: 10,
@@ -338,10 +370,13 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
 
         const awardedPoints = 20;
         const proofId = Date.now().toString() + Math.random().toString(36).slice(2, 7);
+        const scoreKey = `${userId}_photo_proof_${proofId}`;
+
+        pushScoreUpdate({ [scoreKey]: awardedPoints });
 
         setScores(prev => ({
             ...prev,
-            [`${userId}_photo_proof_${proofId}`]: awardedPoints,
+            [scoreKey]: awardedPoints,
         }));
 
         const submission: PhotoProofSubmission = {
@@ -371,13 +406,16 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
                 if (!(scoreKey in prev)) return prev;
                 const next = { ...prev };
                 delete next[scoreKey];
+                pushScoreUpdate({ [scoreKey]: null });
                 return next;
             }
             const normalized = Math.floor(score);
             const isManualAdjustment = scoreKey.endsWith('_manual_adjustment');
+            const newScore = isManualAdjustment ? normalized : Math.max(0, normalized);
+            pushScoreUpdate({ [scoreKey]: newScore });
             return {
                 ...prev,
-                [scoreKey]: isManualAdjustment ? normalized : Math.max(0, normalized),
+                [scoreKey]: newScore,
             };
         });
     };
