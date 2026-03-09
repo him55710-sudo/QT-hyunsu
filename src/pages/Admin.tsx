@@ -1,24 +1,16 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, BarChart3, Download, KeyRound, Lock, LockOpen, Save, ShieldAlert, Upload, Users } from 'lucide-react';
+import { ArrowLeft, BarChart3, Download, KeyRound, Lock, LockOpen, ShieldAlert, Upload, Users } from 'lucide-react';
 import { useQuizContext } from '../context/QuizContext';
 import { ADMIN_PIN, MOCK_USERS, TEACHER_ACCOUNT, WEEKS } from '../data/mockData';
 import ChangePinModal from '../components/ChangePinModal';
 import PinModal from '../components/PinModal';
 
-const toNumberOrNull = (value: string): number | null => {
-    const trimmed = value.trim();
-    if (!trimmed) return null;
-    const parsed = Number(trimmed);
-    return Number.isFinite(parsed) ? parsed : null;
-};
-
 export default function Admin() {
     const navigate = useNavigate();
-    const { scores, userPins, updatePin, setScoreEntry, getUserTotalPoints, getUserSpentPoints, getUserCurrentPoints, isWeekPublic, updateWeekVisibility, exportBackup, importBackup } = useQuizContext();
+    const { scores, userPins, updatePin, getUserTotalPoints, getUserSpentPoints, getUserCurrentPoints, isWeekPublic, updateWeekVisibility, exportBackup, importBackup } = useQuizContext();
 
     const [isChangePinModalOpen, setIsChangePinModalOpen] = useState(false);
-    const [currentPointDrafts, setCurrentPointDrafts] = useState<Record<number, string>>({});
     const [isAdminVerified, setIsAdminVerified] = useState(false);
     const [isAdminPinModalOpen, setIsAdminPinModalOpen] = useState(true);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -71,40 +63,6 @@ export default function Admin() {
             };
         }).sort((a, b) => b.currentPoints - a.currentPoints);
     }, [scores, getUserCurrentPoints, getUserSpentPoints, getUserTotalPoints]);
-
-    const getDraftValue = (userId: number, currentPoints: number) => {
-        return currentPointDrafts[userId] ?? String(currentPoints);
-    };
-
-    const saveCurrentPoints = (userId: number, targetCurrentPointText: string, totalScore: number, spentPoints: number, manualAdjustment: number) => {
-        const parsed = toNumberOrNull(targetCurrentPointText);
-        if (parsed === null) {
-            alert('현재 포인트를 숫자로 입력해주세요.');
-            return;
-        }
-
-        const targetCurrentPoints = Math.max(0, Math.floor(parsed));
-
-        // totalScore = (기본 누적점수 + manualAdjustment)
-        // currentPoints = totalScore - spentPoints
-        // targetCurrentPoints로 맞추기 위해 manualAdjustment를 역산
-        const baseScoreWithoutManual = totalScore - manualAdjustment;
-        const nextManualAdjustment = targetCurrentPoints + spentPoints - baseScoreWithoutManual;
-
-        if (nextManualAdjustment === 0) {
-            setScoreEntry(`${userId}_manual_adjustment`, null);
-        } else {
-            setScoreEntry(`${userId}_manual_adjustment`, nextManualAdjustment);
-        }
-
-        setCurrentPointDrafts((prev) => {
-            const next = { ...prev };
-            delete next[userId];
-            return next;
-        });
-
-        alert('현재 포인트가 저장되었습니다.');
-    };
 
     const handleDownloadBackup = () => {
         const backupRaw = exportBackup();
@@ -205,11 +163,10 @@ export default function Admin() {
                                             </div>
                                             <button
                                                 onClick={() => updateWeekVisibility(week.id, !isPublic)}
-                                                className={`inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-black border transition-colors min-w-[84px] whitespace-nowrap leading-none shrink-0 ${
-                                                    isPublic
-                                                        ? 'bg-blue-50 text-[#0064FF] border-blue-200'
-                                                        : 'bg-slate-100 text-[#8B95A1] border-slate-200'
-                                                }`}
+                                                className={`inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-black border transition-colors min-w-[84px] whitespace-nowrap leading-none shrink-0 ${isPublic
+                                                    ? 'bg-blue-50 text-[#0064FF] border-blue-200'
+                                                    : 'bg-slate-100 text-[#8B95A1] border-slate-200'
+                                                    }`}
                                             >
                                                 {isPublic ? <LockOpen className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
                                                 {isPublic ? '공개' : '비공개'}
@@ -276,13 +233,11 @@ export default function Admin() {
                                         <thead className="bg-[#F8FAFC] border-b border-slate-200">
                                             <tr>
                                                 <th className="px-5 py-4 text-[12px] font-black text-[#8B95A1] w-24">이름</th>
-                                                <th className="px-3 py-4 text-[12px] font-black text-[#8B95A1] text-center">현재 포인트(수정)</th>
+                                                <th className="px-3 py-4 text-[12px] font-black text-[#8B95A1] text-center">현재 포인트</th>
                                                 <th className="px-3 py-4 text-[12px] font-black text-[#8B95A1] text-center">주차퀴즈</th>
                                                 <th className="px-3 py-4 text-[12px] font-black text-[#8B95A1] text-center">출석(일/점)</th>
                                                 <th className="px-3 py-4 text-[12px] font-black text-[#8B95A1] text-center">사진(회/점)</th>
-                                                <th className="px-3 py-4 text-[12px] font-black text-[#8B95A1] text-center">가감점</th>
                                                 <th className="px-3 py-4 text-[12px] font-black text-[#8B95A1] text-center">사용포인트</th>
-                                                <th className="px-5 py-4 text-[12px] font-black text-[#8B95A1] text-center w-28">저장</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -290,40 +245,12 @@ export default function Admin() {
                                                 <tr key={student.id} className="border-b border-blue-50 last:border-0 hover:bg-blue-50/40 transition-colors">
                                                     <td className="px-5 py-4 font-black text-[14px] text-[#191F28] whitespace-nowrap">{student.name}</td>
 
-                                                    <td className="px-3 py-4 text-center">
-                                                        <input
-                                                            type="number"
-                                                            min={0}
-                                                            value={getDraftValue(student.id, student.currentPoints)}
-                                                            onChange={(e) => setCurrentPointDrafts((prev) => ({ ...prev, [student.id]: e.target.value }))}
-                                                            className="w-28 px-2 py-1.5 text-center rounded-lg border border-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-200 font-black text-[#0064FF]"
-                                                        />
-                                                    </td>
+                                                    <td className="px-3 py-4 text-center font-black text-[#0064FF]">{student.currentPoints}P</td>
 
                                                     <td className="px-3 py-4 text-center font-bold text-[#8B95A1]">{student.weeklyTotal}P</td>
                                                     <td className="px-3 py-4 text-center font-bold text-[#8B95A1]">{student.attendanceDays}일 / {student.attendancePoints}P</td>
                                                     <td className="px-3 py-4 text-center font-bold text-[#8B95A1]">{student.photoCount}회 / {student.photoPoints}P</td>
-                                                    <td className="px-3 py-4 text-center font-bold text-[#8B95A1]">{student.manualAdjustment}P</td>
                                                     <td className="px-3 py-4 text-center font-bold text-[#8B95A1]">{student.spentPoints}P</td>
-
-                                                    <td className="px-5 py-4 text-center">
-                                                        {(() => {
-                                                            const draftValue = getDraftValue(student.id, student.currentPoints);
-                                                            const parsed = toNumberOrNull(draftValue);
-                                                            const normalized = parsed === null ? null : Math.max(0, Math.floor(parsed));
-                                                            const isSaveDisabled = normalized === null || normalized === student.currentPoints;
-
-                                                            return (
-                                                                <button
-                                                                    onClick={() => saveCurrentPoints(student.id, draftValue, student.totalScore, student.spentPoints, student.manualAdjustment)}
-                                                                    disabled={isSaveDisabled}
-                                                                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#0064FF] text-white text-xs font-bold hover:bg-[#0056db] active:scale-95 disabled:bg-[#D6DFEA] disabled:text-[#8B95A1] disabled:cursor-not-allowed disabled:active:scale-100"
-                                                                >
-                                                                    <Save className="w-3.5 h-3.5" /> 저장
-                                                                </button>
-                                                            );
-                                                        })()}
-                                                    </td>
                                                 </tr>
                                             ))}
                                         </tbody>
@@ -331,10 +258,6 @@ export default function Admin() {
                                 </div>
                             </div>
                         </div>
-
-                        <p className="mt-5 text-[11px] text-[#B0B8C1] font-bold text-center">
-                            * 현재 포인트를 직접 입력하면 내부 가감점이 자동 계산되어 반영됩니다.
-                        </p>
                     </>
                 )}
             </main>
