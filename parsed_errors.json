@@ -1,0 +1,9 @@
+[
+  "﻿src/context/QuizContext.tsx(229,26): error TS6133: 'prev' is declared but its value is never read.\r",
+  "src/context/QuizContext.tsx(231,62): error TS2345: Argument of type 'User' is not assignable to parameter of type '{ id: number; name: string; pin: string; }'.\r",
+  "  Types of property 'pin' are incompatible.\r",
+  "    Type 'string | undefined' is not assignable to type 'string'.\r",
+  "      Type 'undefined' is not assignable to type 'string'.\r",
+  "src/context/QuizContext.tsx(241,11): error TS6133: 'addUser' is declared but its value is never read.\r",
+  "src/context/QuizContext.tsx(569,17): error TS18004: No value exists in scope for the shorthand property 'addUser'. Either declare one or provide an initializer.\r"
+]

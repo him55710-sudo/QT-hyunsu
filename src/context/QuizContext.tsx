@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { doc, setDoc, onSnapshot, deleteField } from 'firebase/firestore';
+import { doc, setDoc, onSnapshot, deleteField, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { ADMIN_PIN, MOCK_USERS } from '../data/mockData';
 
@@ -187,6 +187,8 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
         return defaultWeekVisibility;
     });
 
+    const isInitializedRef = React.useRef(false);
+
     useEffect(() => {
         if (selectedUserId !== null) {
             localStorage.setItem('qt_quiz_user_v2', selectedUserId.toString());
@@ -221,39 +223,140 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
     };
 
     useEffect(() => {
-        const unsub = onSnapshot(doc(db, 'global_state', 'users'), (snapshot) => {
-            if (snapshot.exists()) {
-                const data = snapshot.data();
-                const fetchedUsers = Object.values(data) as User[];
-                const cmap = new Map<number, User>();
-                MOCK_USERS.forEach((u) => cmap.set(u.id, u));
-                fetchedUsers.forEach((u) => cmap.set(u.id, u));
-                setUsers(Array.from(cmap.values()).sort((a, b) => a.id - b.id));
-            } else {
-                setUsers([...MOCK_USERS]);
-            }
-        });
-        return () => unsub();
-    }, []);
+        const initData = async () => {
+            if (isInitializedRef.current) return;
+            isInitializedRef.current = true;
 
-    const addUser = (name: string, pin: string) => {
-        const currentIds = users.filter(u => u.id < 900).map(u => u.id);
-        const nextId = currentIds.length > 0 ? Math.max(...currentIds) + 1 : 1;
-        const newUser: User = { id: nextId, name, pin };
-        pushUserUpdate(newUser);
-        setUserPins((prev) => {
-             if (prev[nextId.toString()]) return prev;
-             return { ...prev, [nextId.toString()]: pin };
-        });
-    };
+            try {
+                // Initialize User Pins
+                let currentPins = { ...userPins };
+                const pinsSnap = await getDoc(doc(db, 'global_state', 'userPins'));
+                if (pinsSnap.exists()) {
+                    currentPins = { ...currentPins, ...pinsSnap.data() };
+                } else {
+                    await setDoc(doc(db, 'global_state', 'userPins'), currentPins, { merge: true });
+                }
+                setUserPins(currentPins);
 
-    useEffect(() => {
-        const unsub = onSnapshot(doc(db, 'global_state', 'scores'), (snapshot) => {
-            if (snapshot.exists()) {
-                setScores((prev) => ({ ...prev, ...snapshot.data() }));
+                // Initialize wrong answers
+                let currentWrongAnswers = { ...wrongAnswers };
+                const wrongAnswersSnap = await getDoc(doc(db, 'global_state', 'wrongAnswers'));
+                if (wrongAnswersSnap.exists()) {
+                    currentWrongAnswers = { ...currentWrongAnswers, ...wrongAnswersSnap.data() };
+                } else {
+                    await setDoc(doc(db, 'global_state', 'wrongAnswers'), currentWrongAnswers, { merge: true });
+                }
+                setWrongAnswers(currentWrongAnswers);
+
+                // Initialize purchased coupons
+                let currentPurchasedCoupons = { ...purchasedCoupons };
+                const couponsSnap = await getDoc(doc(db, 'global_state', 'purchasedCoupons'));
+                if (couponsSnap.exists()) {
+                    currentPurchasedCoupons = { ...currentPurchasedCoupons, ...couponsSnap.data() };
+                } else {
+                    await setDoc(doc(db, 'global_state', 'purchasedCoupons'), currentPurchasedCoupons, { merge: true });
+                }
+                setPurchasedCoupons(currentPurchasedCoupons);
+
+                // Initialize photo proofs
+                let currentPhotoProofs = { ...photoProofs };
+                const proofsSnap = await getDoc(doc(db, 'global_state', 'photoProofs'));
+                if (proofsSnap.exists()) {
+                    currentPhotoProofs = { ...currentPhotoProofs, ...proofsSnap.data() };
+                } else {
+                    await setDoc(doc(db, 'global_state', 'photoProofs'), currentPhotoProofs, { merge: true });
+                }
+                setPhotoProofs(currentPhotoProofs);
+
+                // Initialize week visibility
+                let currentWeekVisibility = { ...weekVisibility };
+                const weekVizSnap = await getDoc(doc(db, 'global_state', 'weekVisibility'));
+                if (weekVizSnap.exists()) {
+                    currentWeekVisibility = { ...defaultWeekVisibility, ...currentWeekVisibility, ...weekVizSnap.data() };
+                } else {
+                    await setDoc(doc(db, 'global_state', 'weekVisibility'), currentWeekVisibility, { merge: true });
+                }
+                setWeekVisibility(currentWeekVisibility);
+
+            } catch (e) {
+                console.error("Error initializing existing data:", e);
             }
-        });
-        return () => unsub();
+
+            // Start listeners
+            const uUnsub = onSnapshot(doc(db, 'global_state', 'users'), (snapshot) => {
+                if (snapshot.exists()) {
+                    const data = snapshot.data();
+                    const fetchedUsers = Object.values(data) as User[];
+                    const cmap = new Map<number, User>();
+                    MOCK_USERS.forEach((u) => cmap.set(u.id, u));
+                    fetchedUsers.forEach((u) => cmap.set(u.id, u));
+                    setUsers(Array.from(cmap.values()).sort((a, b) => a.id - b.id));
+                } else {
+                    setUsers([...MOCK_USERS]);
+                }
+            });
+
+            const sUnsub = onSnapshot(doc(db, 'global_state', 'scores'), (snapshot) => {
+                if (snapshot.exists()) {
+                    setScores((prev) => ({ ...prev, ...snapshot.data() }));
+                }
+            });
+
+            const pUnsub = onSnapshot(doc(db, 'global_state', 'userPins'), (snapshot) => {
+                if (snapshot.exists()) {
+                    setUserPins((prev) => ({ ...prev, ...snapshot.data() }));
+                }
+            });
+
+            const wUnsub = onSnapshot(doc(db, 'global_state', 'wrongAnswers'), (snapshot) => {
+                if (snapshot.exists()) {
+                    setWrongAnswers((prev) => ({ ...prev, ...snapshot.data() }));
+                }
+            });
+
+            const cUnsub = onSnapshot(doc(db, 'global_state', 'purchasedCoupons'), (snapshot) => {
+                if (snapshot.exists()) {
+                    setPurchasedCoupons((prev) => ({ ...prev, ...snapshot.data() }));
+                }
+            });
+
+            const ppUnsub = onSnapshot(doc(db, 'global_state', 'photoProofs'), (snapshot) => {
+                if (snapshot.exists()) {
+                    setPhotoProofs((prev) => ({ ...prev, ...snapshot.data() }));
+                }
+            });
+
+            const wvUnsub = onSnapshot(doc(db, 'global_state', 'weekVisibility'), (snapshot) => {
+                if (snapshot.exists()) {
+                    setWeekVisibility((prev) => ({ ...prev, ...snapshot.data() }));
+                }
+            });
+
+            // Initial scores merge without overwriting firebase completely, just pushing local ones
+            try {
+                const currentScores = JSON.parse(localStorage.getItem(SCORE_STORAGE_KEY) || '{}');
+                if (Object.keys(currentScores).length > 0) {
+                    await setDoc(doc(db, 'global_state', 'scores'), currentScores, { merge: true });
+                }
+            } catch (e) {
+                console.error("Failed to push initial scores", e);
+            }
+
+            return () => {
+                uUnsub();
+                sUnsub();
+                pUnsub();
+                wUnsub();
+                cUnsub();
+                ppUnsub();
+                wvUnsub();
+            };
+        };
+
+        const cleanupPromise = initData();
+        return () => {
+            cleanupPromise.then(cleanup => cleanup && cleanup());
+        };
     }, []);
 
     useEffect(() => {
@@ -263,6 +366,14 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
     useEffect(() => {
         localStorage.setItem(PIN_STORAGE_KEY, JSON.stringify(userPins));
     }, [userPins]);
+
+    const addUser = (name: string, pin: string) => {
+        const currentIds = users.filter(u => u.id < 900).map(u => u.id);
+        const nextId = currentIds.length > 0 ? Math.max(...currentIds) + 1 : 1;
+        const newUser: User = { id: nextId, name, pin };
+        pushUserUpdate(newUser);
+        updatePin(nextId, pin);
+    };
 
     useEffect(() => {
         setUserPins((prev) => {
@@ -347,10 +458,14 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
     };
 
     const updatePin = (targetId: number | 'admin', newPin: string) => {
-        setUserPins(prev => ({
-            ...prev,
-            [targetId.toString()]: newPin,
-        }));
+        setUserPins(prev => {
+            const next = {
+                ...prev,
+                [targetId.toString()]: newPin,
+            };
+            setDoc(doc(db, 'global_state', 'userPins'), { [targetId.toString()]: newPin }, { merge: true }).catch(console.error);
+            return next;
+        });
     };
 
     const addWrongAnswer = (userId: number, questionIndex: number) => {
@@ -358,10 +473,12 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
             const userKey = userId.toString();
             const prevAnswers = prev[userKey] || [];
             if (prevAnswers.includes(questionIndex)) return prev;
-            return {
+            const updated = {
                 ...prev,
                 [userKey]: [...prevAnswers, questionIndex],
             };
+            setDoc(doc(db, 'global_state', 'wrongAnswers'), { [userKey]: updated[userKey] }, { merge: true }).catch(console.error);
+            return updated;
         });
     };
 
@@ -389,10 +506,14 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
             }),
         };
 
-        setPurchasedCoupons(prev => ({
-            ...prev,
-            [userId.toString()]: [newCoupon, ...(prev[userId.toString()] || [])],
-        }));
+        setPurchasedCoupons(prev => {
+            const updated = {
+                ...prev,
+                [userId.toString()]: [newCoupon, ...(prev[userId.toString()] || [])],
+            };
+            setDoc(doc(db, 'global_state', 'purchasedCoupons'), { [userId.toString()]: updated[userId.toString()] }, { merge: true }).catch(console.error);
+            return updated;
+        });
 
         return true;
     };
@@ -448,10 +569,14 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
             points: awardedPoints,
         };
 
-        setPhotoProofs(prev => ({
-            ...prev,
-            [userId.toString()]: [submission, ...(prev[userId.toString()] || [])],
-        }));
+        setPhotoProofs(prev => {
+            const updated = {
+                ...prev,
+                [userId.toString()]: [submission, ...(prev[userId.toString()] || [])],
+            };
+            setDoc(doc(db, 'global_state', 'photoProofs'), { [userId.toString()]: updated[userId.toString()] }, { merge: true }).catch(console.error);
+            return updated;
+        });
 
         return { ok: true as const, points: awardedPoints };
     };
@@ -498,10 +623,14 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
     };
 
     const updateWeekVisibility = (weekId: number, isPublic: boolean) => {
-        setWeekVisibility(prev => ({
-            ...prev,
-            [weekId.toString()]: isPublic,
-        }));
+        setWeekVisibility(prev => {
+            const updated = {
+                ...prev,
+                [weekId.toString()]: isPublic,
+            };
+            setDoc(doc(db, 'global_state', 'weekVisibility'), { [weekId.toString()]: isPublic }, { merge: true }).catch(console.error);
+            return updated;
+        });
     };
 
     const exportBackup = () => {
