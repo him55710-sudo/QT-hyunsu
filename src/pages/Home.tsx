@@ -2,11 +2,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { BookOpen, Camera, Check, ChevronLeft, ChevronRight, Lock, RotateCcw, Search, Star, Trophy, UserCheck } from 'lucide-react';
+import { BookOpen, Camera, Check, ChevronLeft, ChevronRight, Lock, RotateCcw, Search, Star, Trophy, UserCheck, X } from 'lucide-react';
 import { ADMIN_PIN, WEEKS } from '../data/mockData';
-import { useQuizContext } from '../context/QuizContext';
+import { useQuizContext, type DailyQtActivity } from '../context/QuizContext';
 import PinModal from '../components/PinModal';
 import ChangePinModal from '../components/ChangePinModal';
+import SpringPetals from '../components/SpringPetals';
+import { formatDateKey, parseProofTimestamp, toKstDateKey } from '../utils/dateKst';
 
 type OcrSummary = {
     bestQuestionsLength: number;
@@ -165,9 +167,26 @@ const chooseBestSummary = (summaries: OcrSummary[]) => {
     });
 };
 
+const toCalendarDateKey = (year: number, month: number, day: number) => {
+    return `${year}-${`${month + 1}`.padStart(2, '0')}-${`${day}`.padStart(2, '0')}`;
+};
+
+const formatSubmittedAtLabel = (submittedAt?: string, submittedAtMs?: number, submittedDateKey?: string) => {
+    const timestamp = parseProofTimestamp(submittedAt, submittedAtMs, submittedDateKey);
+    if (!timestamp) return '업로드 시간 정보 없음';
+
+    return new Intl.DateTimeFormat('ko-KR', {
+        timeZone: 'Asia/Seoul',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+    }).format(new Date(timestamp));
+};
+
 export default function Home() {
     const navigate = useNavigate();
-    const { selectedUserId, setSelectedUserId, markAttendance, scores, certifyPhotoProof, photoProofs, userPins, updatePin, isWeekPublic, users, addUser } = useQuizContext();
+    const { selectedUserId, setSelectedUserId, markAttendance, scores, certifyPhotoProof, userPins, updatePin, isWeekPublic, users, addUser, getUserDailyActivity } = useQuizContext();
 
     const [newUserName, setNewUserName] = useState('');
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -181,9 +200,12 @@ export default function Home() {
     const [isOcrLoading, setIsOcrLoading] = useState(false);
     const [ocrResult, setOcrResult] = useState<{ ok: boolean; message: string } | null>(null);
 
-    const now = new Date();
-    const [calendarYear, setCalendarYear] = useState(now.getFullYear());
-    const [calendarMonth, setCalendarMonth] = useState(now.getMonth());
+    const todayKstParts = toKstDateKey().split('-').map(Number);
+    const [calendarYear, setCalendarYear] = useState(todayKstParts[0] || new Date().getFullYear());
+    const [calendarMonth, setCalendarMonth] = useState((todayKstParts[1] || 1) - 1);
+    const [selectedCalendarDateKey, setSelectedCalendarDateKey] = useState<string | null>(null);
+    const [selectedProofIndex, setSelectedProofIndex] = useState(0);
+    const [brokenImageUrls, setBrokenImageUrls] = useState<Record<string, true>>({});
 
     const currentUser = users.find((u) => u.id === selectedUserId);
 
@@ -202,6 +224,23 @@ export default function Home() {
             setTimeout(() => setShowAttendanceToast(false), 3500);
         }
     }, [selectedUserId, markAttendance]);
+
+    useEffect(() => {
+        setSelectedProofIndex(0);
+    }, [selectedCalendarDateKey]);
+
+    useEffect(() => {
+        if (!selectedUserId) {
+            setSelectedCalendarDateKey(null);
+        }
+    }, [selectedUserId]);
+
+    const markBrokenImage = (url: string) => {
+        setBrokenImageUrls((prev) => {
+            if (prev[url]) return prev;
+            return { ...prev, [url]: true };
+        });
+    };
 
     const handleUserSelect = (user: (typeof users)[number]) => {
         if (selectedUserId === user.id) return;
@@ -321,69 +360,63 @@ export default function Home() {
         }
     };
 
-    const attendanceDays = useMemo(() => {
-        if (!selectedUserId) return new Set<number>();
-
-        const prefix = `${selectedUserId}_attendance_`;
-        const result = new Set<number>();
-
-        for (const key of Object.keys(scores)) {
-            if (!key.startsWith(prefix)) continue;
-            const parts = key.slice(prefix.length).replace(/\.$/, '').split('-');
-            if (parts.length !== 3) continue;
-
-            const y = Number(parts[0]);
-            const m = Number(parts[1]) - 1;
-            const d = Number(parts[2]);
-            if (y === calendarYear && m === calendarMonth) result.add(d);
-        }
-
-        return result;
-    }, [calendarMonth, calendarYear, scores, selectedUserId]);
+    const dailyActivity = useMemo<Record<string, DailyQtActivity>>(() => {
+        if (!selectedUserId) return {};
+        return getUserDailyActivity(selectedUserId);
+    }, [getUserDailyActivity, selectedUserId]);
 
     const thisMonthProofCount = useMemo(() => {
-        if (!selectedUserId) return 0;
-        const list = photoProofs[selectedUserId.toString()] || [];
-        return list.filter((item) => {
-            const dt = new Date(item.submittedAt);
-            return dt.getFullYear() === calendarYear && dt.getMonth() === calendarMonth;
-        }).length;
-    }, [calendarMonth, calendarYear, photoProofs, selectedUserId]);
+        return Object.entries(dailyActivity)
+            .filter(([dateKey]) => dateKey.startsWith(`${calendarYear}-${`${calendarMonth + 1}`.padStart(2, '0')}-`))
+            .reduce((sum, [, record]) => sum + record.proofs.length, 0);
+    }, [calendarMonth, calendarYear, dailyActivity]);
 
     const firstDayOfMonth = new Date(calendarYear, calendarMonth, 1).getDay();
     const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
+    const todayDateKey = toKstDateKey();
+    const selectedCalendarRecord = selectedCalendarDateKey ? dailyActivity[selectedCalendarDateKey] : undefined;
+    const selectedProofs = selectedCalendarRecord?.proofs || [];
+    const selectedProof = selectedProofs[selectedProofIndex] || null;
 
     return (
-        <div className="flex flex-col min-h-screen bg-[#F2F6FF] text-[#191F28]">
-            <div className="px-5 pt-14 pb-5">
-                <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="bg-[#0064FF] rounded-[24px] p-6 shadow-[0_8px_32px_rgba(0,100,255,0.25)]">
+        <div className="relative flex flex-col min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top,#fff5f3_0%,#f4f8ff_42%,#edf4ff_100%)] text-[#191F28]">
+            <SpringPetals variant="background" className="z-0" />
+            <div className="pointer-events-none absolute -top-16 left-[-8%] w-56 h-56 rounded-full bg-[#ffd7df]/45 blur-3xl" />
+            <div className="pointer-events-none absolute top-24 right-[-14%] w-72 h-72 rounded-full bg-[#d9ebff]/70 blur-3xl" />
+
+            <div className="relative z-10 px-5 pt-14 pb-5">
+                <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="rounded-[28px] p-6 shadow-[0_10px_34px_rgba(73,96,144,0.2)] border border-white/70 bg-gradient-to-br from-[#f88ea4] via-[#ffb3a8] to-[#7aa9ff]"
+                >
                     <div className="flex items-center gap-3 mb-5">
-                        <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
+                        <div className="w-10 h-10 bg-white/25 rounded-full flex items-center justify-center">
                             <BookOpen className="w-5 h-5 text-white" />
                         </div>
                         <div>
-                            <p className="text-[13px] text-blue-200 font-bold">고등부 QT 퀴즈</p>
+                            <p className="text-[13px] text-[#fff4f7] font-bold">2026 봄 QT 시즌</p>
                             <p className="text-[15px] font-black text-white">{currentUser ? `${currentUser.name} 님` : '이름을 선택해주세요'}</p>
                         </div>
                     </div>
 
                     <div className="mb-5">
-                        <p className="text-[12px] text-blue-200 mb-1">내 포인트</p>
+                        <p className="text-[12px] text-[#ffe8ed] mb-1">내 포인트</p>
                         <div className="flex items-baseline gap-1">
                             <span className="text-[40px] font-black tracking-tight text-white">{selectedUserId ? totalPoints.toLocaleString() : '--'}</span>
-                            <span className="text-[20px] font-black text-blue-200">P</span>
+                            <span className="text-[20px] font-black text-[#ffe8ed]">P</span>
                         </div>
                     </div>
 
                     <div className="grid grid-cols-3 gap-2">
-                        <button onClick={() => navigate('/store')} className="bg-white text-[#0064FF] rounded-[14px] py-3 text-[13px] font-black active:scale-95 transition-all shadow-sm">포인트 교환</button>
-                        <button onClick={() => navigate('/leaderboard')} className="bg-white/20 text-white rounded-[14px] py-3 text-[13px] font-bold active:scale-95 transition-all hover:bg-white/30">랭킹</button>
-                        <button onClick={() => navigate('/wrong-answers')} className="bg-white/20 text-white rounded-[14px] py-3 text-[13px] font-bold active:scale-95 transition-all hover:bg-white/30">오답</button>
+                        <button onClick={() => navigate('/store')} className="bg-white text-[#3857be] rounded-[14px] py-3 text-[13px] font-black active:scale-95 transition-all shadow-sm">포인트 교환</button>
+                        <button onClick={() => navigate('/leaderboard')} className="bg-white/25 text-white rounded-[14px] py-3 text-[13px] font-bold active:scale-95 transition-all hover:bg-white/35">랭킹</button>
+                        <button onClick={() => navigate('/wrong-answers')} className="bg-white/25 text-white rounded-[14px] py-3 text-[13px] font-bold active:scale-95 transition-all hover:bg-white/35">오답</button>
                     </div>
                 </motion.div>
             </div>
 
-            <div className="flex-1 flex flex-col gap-4 px-5 pb-10">
+            <div className="relative z-10 flex-1 flex flex-col gap-4 px-5 pb-10">
                 <motion.section initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="bg-white rounded-[20px] p-5 shadow-[0_2px_16px_rgba(0,100,255,0.06)] border border-blue-50">
                     <div className="flex items-center gap-2 mb-4">
                         <UserCheck className="w-4 h-4 text-[#0064FF]" />
@@ -510,13 +543,13 @@ export default function Home() {
                         </>
                     )}
                 </motion.section>
-                <motion.section initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="bg-white rounded-[20px] p-5 shadow-[0_2px_16px_rgba(0,100,255,0.06)] border border-blue-50">
+                <motion.section initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="bg-white/95 rounded-[20px] p-5 shadow-[0_2px_16px_rgba(0,100,255,0.08)] border border-blue-50">
                     <div className="flex items-center justify-between mb-4">
                         <div>
                             <h2 className="text-[15px] font-black text-[#191F28]">QT 출석 기록</h2>
                             {selectedUserId && (
                                 <p className="text-[12px] text-[#8B95A1] mt-0.5">
-                                    이번 달 사진 인증 <span className="text-[#0064FF] font-black">{thisMonthProofCount}회</span>
+                                    이번 달 사진 인증 <span className="text-[#0064FF] font-black">{thisMonthProofCount}회</span> · 날짜를 누르면 상세 보기
                                 </p>
                             )}
                         </div>
@@ -539,19 +572,58 @@ export default function Home() {
                         ))}
                     </div>
 
-                    <div className="grid grid-cols-7 gap-y-1.5">
+                    <div className="grid grid-cols-7 gap-1.5">
                         {Array.from({ length: firstDayOfMonth }).map((_, i) => <div key={`empty-${i}`} />)}
                         {Array.from({ length: daysInMonth }).map((_, i) => {
                             const day = i + 1;
-                            const isToday = day === now.getDate() && calendarMonth === now.getMonth() && calendarYear === now.getFullYear();
-                            const isDone = attendanceDays.has(day);
+                            const dateKey = toCalendarDateKey(calendarYear, calendarMonth, day);
+                            const dayRecord = dailyActivity[dateKey];
+                            const isToday = dateKey === todayDateKey;
+                            const hasAttendance = Boolean(dayRecord?.attended);
+                            const hasProof = Boolean(dayRecord?.qtVerified);
+                            const thumbUrl = dayRecord?.qtPhotoUrls[0];
+                            const thumbBroken = thumbUrl ? Boolean(brokenImageUrls[thumbUrl]) : false;
+
                             return (
-                                <div key={day} className="flex items-center justify-center">
-                                    <div className={`w-8 h-8 flex items-center justify-center rounded-full text-xs font-black transition-all ${isDone ? 'bg-[#0064FF] text-white shadow-[0_2px_8px_rgba(0,100,255,0.3)]' : isToday ? 'border-2 border-[#0064FF] text-[#0064FF]' : 'text-[#8B95A1] hover:bg-blue-50'
-                                        }`}>
-                                        {isDone ? <Check className="w-3.5 h-3.5" /> : day}
+                                <button
+                                    key={day}
+                                    onClick={() => setSelectedCalendarDateKey(dateKey)}
+                                    className={`relative min-h-[64px] rounded-[12px] border p-1.5 text-left transition-all active:scale-[0.98] overflow-hidden ${hasAttendance || hasProof
+                                        ? 'border-blue-200 bg-blue-50/70 hover:bg-blue-100/70'
+                                        : 'border-slate-200 bg-white hover:bg-slate-50'
+                                        } ${isToday ? 'ring-2 ring-[#2F63D9]/30' : ''}`}
+                                >
+                                    <div className="flex items-center justify-between mb-1">
+                                        <span className={`text-[10px] font-black ${isToday ? 'text-[#2F63D9]' : 'text-[#63708A]'}`}>{day}</span>
+                                        {hasAttendance && <Check className="w-3 h-3 text-[#2F63D9]" />}
                                     </div>
-                                </div>
+
+                                    {hasProof && thumbUrl && !thumbBroken ? (
+                                        <img
+                                            src={thumbUrl}
+                                            alt="QT 인증 썸네일"
+                                            className="w-full h-[34px] rounded-[8px] object-cover"
+                                            loading="lazy"
+                                            onError={() => markBrokenImage(thumbUrl)}
+                                        />
+                                    ) : hasProof ? (
+                                        <div className="w-full h-[34px] rounded-[8px] bg-blue-100 text-[#4D76D8] text-[10px] font-black flex items-center justify-center">
+                                            QT 인증
+                                        </div>
+                                    ) : hasAttendance ? (
+                                        <div className="w-full h-[34px] rounded-[8px] bg-white text-[#6B7280] text-[10px] font-black flex items-center justify-center border border-blue-100">
+                                            출석 완료
+                                        </div>
+                                    ) : (
+                                        <div className="w-full h-[34px] rounded-[8px] bg-slate-50 border border-slate-100" />
+                                    )}
+
+                                    {hasProof && (dayRecord?.qtPhotoUrls.length || 0) > 1 && (
+                                        <span className="absolute right-1.5 bottom-1.5 text-[9px] leading-none px-1 py-0.5 rounded-full bg-[#2F63D9] text-white font-black">
+                                            +{(dayRecord?.qtPhotoUrls.length || 1) - 1}
+                                        </span>
+                                    )}
+                                </button>
                             );
                         })}
                     </div>
@@ -600,6 +672,103 @@ export default function Home() {
                 </div>
             </div>
 
+            <AnimatePresence>
+                {selectedCalendarDateKey && (
+                    <motion.div
+                        className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm p-4 flex items-end sm:items-center justify-center"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        onClick={() => setSelectedCalendarDateKey(null)}
+                    >
+                        <motion.div
+                            initial={{ opacity: 0, y: 20, scale: 0.96 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, y: 10, scale: 0.98 }}
+                            onClick={(e) => e.stopPropagation()}
+                            className="w-full max-w-md bg-white rounded-[22px] border border-slate-200 shadow-xl overflow-hidden"
+                        >
+                            <div className="px-4 py-3.5 border-b border-slate-100 flex items-start justify-between gap-3">
+                                <div>
+                                    <p className="text-[11px] text-[#8B95A1] font-black">캘린더 상세</p>
+                                    <h3 className="text-[15px] text-[#1F293D] font-black">{formatDateKey(selectedCalendarDateKey)}</h3>
+                                </div>
+                                <button
+                                    onClick={() => setSelectedCalendarDateKey(null)}
+                                    className="p-2 rounded-full bg-slate-100 text-slate-500 hover:text-slate-700"
+                                >
+                                    <X className="w-4 h-4" />
+                                </button>
+                            </div>
+
+                            <div className="p-4 space-y-3">
+                                <div className="flex gap-2 flex-wrap">
+                                    <span className={`text-[11px] px-2.5 py-1 rounded-full font-black ${selectedCalendarRecord?.attended ? 'bg-blue-50 text-[#2F63D9]' : 'bg-slate-100 text-slate-500'}`}>
+                                        출석 {selectedCalendarRecord?.attended ? '완료' : '미완료'}
+                                    </span>
+                                    <span className={`text-[11px] px-2.5 py-1 rounded-full font-black ${selectedCalendarRecord?.qtVerified ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>
+                                        QT 인증 {selectedCalendarRecord?.qtVerified ? '완료' : '없음'}
+                                    </span>
+                                </div>
+
+                                {selectedProof ? (
+                                    <div className="space-y-2.5">
+                                        {selectedProof.imageDataUrl && !brokenImageUrls[selectedProof.imageDataUrl] ? (
+                                            <img
+                                                src={selectedProof.imageDataUrl}
+                                                alt="QT 인증 상세 이미지"
+                                                className="w-full max-h-[280px] object-cover rounded-[14px] border border-slate-200"
+                                                onError={() => selectedProof.imageDataUrl && markBrokenImage(selectedProof.imageDataUrl)}
+                                            />
+                                        ) : (
+                                            <div className="w-full h-[180px] rounded-[14px] border border-slate-200 bg-slate-100 flex items-center justify-center text-slate-500 text-[13px] font-black">
+                                                이미지를 불러오지 못했어요
+                                            </div>
+                                        )}
+
+                                        <p className="text-[12px] text-slate-500 font-bold">
+                                            업로드 시간: {formatSubmittedAtLabel(selectedProof.submittedAt, selectedProof.submittedAtMs, selectedProof.submittedDateKey)}
+                                        </p>
+
+                                        {selectedProofs.length > 1 && (
+                                            <div className="grid grid-cols-4 gap-2">
+                                                {selectedProofs.map((proof, index) => {
+                                                    const thumb = proof.imageDataUrl;
+                                                    const isBroken = thumb ? Boolean(brokenImageUrls[thumb]) : true;
+
+                                                    return (
+                                                        <button
+                                                            key={proof.id}
+                                                            onClick={() => setSelectedProofIndex(index)}
+                                                            className={`rounded-[10px] overflow-hidden border ${selectedProofIndex === index ? 'border-[#2F63D9]' : 'border-slate-200'}`}
+                                                        >
+                                                            {thumb && !isBroken ? (
+                                                                <img
+                                                                    src={thumb}
+                                                                    alt={`QT 인증 ${index + 1}`}
+                                                                    className="w-full h-14 object-cover"
+                                                                    onError={() => markBrokenImage(thumb)}
+                                                                />
+                                                            ) : (
+                                                                <div className="w-full h-14 bg-slate-100 text-slate-500 text-[10px] font-black flex items-center justify-center">이미지 없음</div>
+                                                            )}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <div className="rounded-[14px] border border-slate-200 bg-slate-50 px-4 py-6 text-center">
+                                        <p className="text-[13px] text-slate-500 font-bold">이 날짜에는 저장된 QT 인증 사진이 없습니다.</p>
+                                    </div>
+                                )}
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
             <PinModal
                 isOpen={pinModalConfig.isOpen}
                 onClose={() => setPinModalConfig((prev) => ({ ...prev, isOpen: false }))}
@@ -632,6 +801,8 @@ export default function Home() {
                     </motion.div>
                 )}
             </AnimatePresence>
+
+            <SpringPetals variant="screen" className="z-20" />
         </div>
     );
 }

@@ -1,13 +1,19 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+﻿import React, { createContext, useContext, useEffect, useState } from 'react';
 import { doc, setDoc, onSnapshot, deleteField, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
-import { ADMIN_PIN, MOCK_USERS } from '../data/mockData';
+import { ADMIN_PIN, MOCK_SCORES, MOCK_USERS, WEEKS } from '../data/mockData';
+import { normalizeDateKey, parseProofTimestamp, toKstDateKey } from '../utils/dateKst';
 
 export interface User {
     id: number;
     name: string;
     pin?: string;
 }
+
+type UserDocEntry = User & {
+    deleted?: boolean;
+    deletedAt?: string;
+};
 
 export interface PurchasedCoupon {
     id: string;
@@ -21,6 +27,7 @@ export interface PhotoProofSubmission {
     id: string;
     imageName: string;
     submittedAt: string;
+    submittedAtMs?: number;
     submittedDateKey: string;
     imageFingerprint: string;
     imageDataUrl?: string;
@@ -29,6 +36,20 @@ export interface PhotoProofSubmission {
     thankOfferingsLength: number;
     points: number;
 }
+
+export interface DailyQtActivity {
+    dateKey: string;
+    attended: boolean;
+    qtVerified: boolean;
+    qtPhotoUrls: string[];
+    proofs: PhotoProofSubmission[];
+    timezone: 'Asia/Seoul';
+}
+
+type FirestoreDocSnapshot = {
+    exists: () => boolean;
+    data: () => Record<string, unknown>;
+};
 
 type QuizBackupPayload = {
     version: number;
@@ -47,6 +68,7 @@ type QuizBackupPayload = {
 type QuizContextType = {
     users: User[];
     addUser: (name: string, pin: string) => void;
+    deleteUser: (userId: number) => { ok: true } | { ok: false; message: string };
     selectedUserId: number | null;
     setSelectedUserId: (id: number | null) => void;
     scores: Record<string, number>;
@@ -67,6 +89,7 @@ type QuizContextType = {
         oneVerseLength: number;
         thankOfferingsLength: number;
     }) => { ok: true; points: number } | { ok: false; message: string };
+    getUserDailyActivity: (userId: number) => Record<string, DailyQtActivity>;
     setScoreEntry: (scoreKey: string, score: number | null) => void;
     getUserTotalPoints: (userId: number) => number;
     getUserSpentPoints: (userId: number) => number;
@@ -81,6 +104,8 @@ type QuizContextType = {
 const QuizContext = createContext<QuizContextType | undefined>(undefined);
 
 const SCORE_STORAGE_KEY = 'qt_quiz_scores_v3';
+const LEGACY_SCORE_STORAGE_KEYS = ['qt_quiz_scores_v2', 'qt_quiz_scores_v1', 'qt_quiz_scores'];
+const DELETED_USERS_STORAGE_KEY = 'qt_quiz_deleted_users_v1';
 const PIN_STORAGE_KEY = 'qt_quiz_pins';
 const WRONG_ANSWER_STORAGE_KEY = 'qt_quiz_wrong_answers_v2';
 const COUPON_STORAGE_KEY = 'qt_quiz_coupons_v2';
@@ -88,19 +113,105 @@ const PHOTO_PROOF_STORAGE_KEY = 'qt_quiz_photo_proofs_v1';
 const PHOTO_PROOF_MIN_CHARS = 15;
 const WEEK_VISIBILITY_STORAGE_KEY = 'qt_quiz_week_visibility_v1';
 const BACKUP_VERSION = 1;
-const defaultWeekVisibility: Record<string, boolean> = {
-    '1': false,
-    '2': false,
-    '3': false,
-    '4': false,
-    '5': false,
+const defaultWeekVisibility: Record<string, boolean> = WEEKS.reduce((acc, week) => {
+    acc[week.id.toString()] = false;
+    return acc;
+}, {} as Record<string, boolean>);
+
+const PROTECTED_USER_ID_MIN = 900;
+
+const parseDeletedUserIds = (raw: unknown) => {
+    if (!Array.isArray(raw)) return [] as number[];
+    return raw
+        .map((value) => Number(value))
+        .filter((value, index, self) => Number.isFinite(value) && value > 0 && self.indexOf(value) === index);
 };
 
-const toDateKey = (date: Date) => {
-    const y = date.getFullYear();
-    const m = `${date.getMonth() + 1}`.padStart(2, '0');
-    const d = `${date.getDate()}`.padStart(2, '0');
-    return `${y}-${m}-${d}`;
+const parseScoreRecord = (raw: unknown) => {
+    if (!raw || typeof raw !== 'object') return {} as Record<string, number>;
+
+    const parsed: Record<string, number> = {};
+    Object.entries(raw as Record<string, unknown>).forEach(([key, value]) => {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric)) return;
+        if (!/^(\d+)_/.test(key)) return;
+        parsed[key] = numeric;
+    });
+
+    // Legacy nested format fallback: { "1": { "1": 90, "2": 80 } }
+    Object.entries(raw as Record<string, unknown>).forEach(([userKey, nested]) => {
+        if (!/^\d+$/.test(userKey) || !nested || typeof nested !== 'object') return;
+
+        Object.entries(nested as Record<string, unknown>).forEach(([weekKey, nestedValue]) => {
+            if (!/^\d+$/.test(weekKey)) return;
+            const numeric = Number(nestedValue);
+            if (!Number.isFinite(numeric)) return;
+
+            const key = `${userKey}_${weekKey}`;
+            parsed[key] = Math.max(parsed[key] ?? Number.NEGATIVE_INFINITY, numeric);
+        });
+    });
+
+    return parsed;
+};
+
+const mergeScoresByMax = (...sources: Record<string, number>[]) => {
+    const merged: Record<string, number> = {};
+    sources.forEach((source) => {
+        Object.entries(source).forEach(([key, value]) => {
+            const prev = merged[key] ?? Number.NEGATIVE_INFINITY;
+            merged[key] = Math.max(prev, value);
+        });
+    });
+    return merged;
+};
+
+const buildDefaultScoreRecord = () => {
+    return MOCK_SCORES.reduce<Record<string, number>>((acc, row) => {
+        const key = `${row.userId}_${row.weekId}`;
+        const prev = acc[key] ?? Number.NEGATIVE_INFINITY;
+        acc[key] = Math.max(prev, Number(row.score) || 0);
+        return acc;
+    }, {});
+};
+
+const recoverScoresFromLocalStorage = () => {
+    const sourceList: Record<string, number>[] = [];
+    const baselineScores = buildDefaultScoreRecord();
+
+    try {
+        const direct = localStorage.getItem(SCORE_STORAGE_KEY);
+        if (direct) sourceList.push(parseScoreRecord(JSON.parse(direct)));
+    } catch {
+        // ignore
+    }
+
+    LEGACY_SCORE_STORAGE_KEYS.forEach((key) => {
+        try {
+            const raw = localStorage.getItem(key);
+            if (raw) sourceList.push(parseScoreRecord(JSON.parse(raw)));
+        } catch {
+            // ignore legacy parse errors
+        }
+    });
+
+    // Backup JSON fallback: if a backup payload exists in localStorage, recover from data.scores.
+    for (let i = 0; i < localStorage.length; i += 1) {
+        const key = localStorage.key(i);
+        if (!key || !key.toLowerCase().includes('backup')) continue;
+
+        try {
+            const payload = JSON.parse(localStorage.getItem(key) || 'null') as { data?: { scores?: unknown } } | null;
+            if (payload?.data?.scores) {
+                sourceList.push(parseScoreRecord(payload.data.scores));
+            }
+        } catch {
+            // ignore invalid backups
+        }
+    }
+
+    if (sourceList.length === 0) return baselineScores;
+    return mergeScoresByMax(baselineScores, ...sourceList);
 };
 
 export function QuizProvider({ children }: { children: React.ReactNode }) {
@@ -111,10 +222,20 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
         return saved ? parseInt(saved, 10) : null;
     });
 
+    const [deletedUserIds, setDeletedUserIds] = useState<number[]>(() => {
+        try {
+            const saved = localStorage.getItem(DELETED_USERS_STORAGE_KEY);
+            if (!saved) return [];
+            return parseDeletedUserIds(JSON.parse(saved));
+        } catch (e) {
+            console.error('Failed to parse deleted users', e);
+            return [];
+        }
+    });
+    const deletedUserIdsRef = React.useRef<number[]>(deletedUserIds);
+
     const [scores, setScores] = useState<Record<string, number>>(() => {
-        const saved = localStorage.getItem(SCORE_STORAGE_KEY);
-        if (saved) return JSON.parse(saved);
-        return {};
+        return recoverScoresFromLocalStorage();
     });
 
     const [userPins, setUserPins] = useState<Record<string, string>>(() => {
@@ -197,10 +318,19 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
         }
     }, [selectedUserId]);
 
+    useEffect(() => {
+        deletedUserIdsRef.current = deletedUserIds;
+        localStorage.setItem(DELETED_USERS_STORAGE_KEY, JSON.stringify(deletedUserIds));
+    }, [deletedUserIds]);
+
+    useEffect(() => {
+        setUsers((prev) => prev.filter((user) => !deletedUserIds.includes(user.id)));
+    }, [deletedUserIds]);
+
     // Firebase Sync for Scores
     const pushScoreUpdate = async (updateObj: Record<string, number | null>) => {
         try {
-            const safeObj: any = { ...updateObj };
+            const safeObj: Record<string, unknown> = { ...updateObj };
             for (const key in safeObj) {
                 if (safeObj[key] === null) {
                     safeObj[key] = deleteField();
@@ -215,7 +345,10 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
     const pushUserUpdate = async (newUser: User) => {
         try {
             await setDoc(doc(db, 'global_state', 'users'), {
-                [newUser.id]: newUser,
+                [newUser.id]: {
+                    ...newUser,
+                    deleted: false,
+                },
             }, { merge: true });
         } catch (e) {
             console.error('Firebase save error:', e);
@@ -283,58 +416,80 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
             }
 
             // Start listeners
-            const uUnsub = onSnapshot(doc(db, 'global_state', 'users'), (snapshot) => {
+            const uUnsub = onSnapshot(doc(db, 'global_state', 'users'), (snapshot: FirestoreDocSnapshot) => {
                 if (snapshot.exists()) {
                     const data = snapshot.data();
-                    const fetchedUsers = Object.values(data) as User[];
                     const cmap = new Map<number, User>();
                     MOCK_USERS.forEach((u) => cmap.set(u.id, u));
-                    fetchedUsers.forEach((u) => cmap.set(u.id, u));
+
+                    Object.values(data).forEach((raw) => {
+                        if (!raw || typeof raw !== 'object') return;
+
+                        const entry = raw as UserDocEntry;
+                        if (!Number.isFinite(entry.id)) return;
+
+                        if (entry.deleted) {
+                            cmap.delete(entry.id);
+                            return;
+                        }
+
+                        const existing = cmap.get(entry.id);
+                        cmap.set(entry.id, {
+                            id: entry.id,
+                            name: entry.name || existing?.name || `사용자 ${entry.id}`,
+                            pin: entry.pin || existing?.pin,
+                        });
+                    });
+
+                    deletedUserIdsRef.current.forEach((deletedId) => {
+                        cmap.delete(deletedId);
+                    });
+
                     setUsers(Array.from(cmap.values()).sort((a, b) => a.id - b.id));
                 } else {
-                    setUsers([...MOCK_USERS]);
+                    setUsers(MOCK_USERS.filter((user) => !deletedUserIdsRef.current.includes(user.id)));
                 }
             });
 
-            const sUnsub = onSnapshot(doc(db, 'global_state', 'scores'), (snapshot) => {
+            const sUnsub = onSnapshot(doc(db, 'global_state', 'scores'), (snapshot: FirestoreDocSnapshot) => {
                 if (snapshot.exists()) {
-                    setScores((prev) => ({ ...prev, ...snapshot.data() }));
+                    setScores((prev) => ({ ...prev, ...(snapshot.data() as Record<string, number>) }));
                 }
             });
 
-            const pUnsub = onSnapshot(doc(db, 'global_state', 'userPins'), (snapshot) => {
+            const pUnsub = onSnapshot(doc(db, 'global_state', 'userPins'), (snapshot: FirestoreDocSnapshot) => {
                 if (snapshot.exists()) {
-                    setUserPins((prev) => ({ ...prev, ...snapshot.data() }));
+                    setUserPins((prev) => ({ ...prev, ...(snapshot.data() as Record<string, string>) }));
                 }
             });
 
-            const wUnsub = onSnapshot(doc(db, 'global_state', 'wrongAnswers'), (snapshot) => {
+            const wUnsub = onSnapshot(doc(db, 'global_state', 'wrongAnswers'), (snapshot: FirestoreDocSnapshot) => {
                 if (snapshot.exists()) {
-                    setWrongAnswers((prev) => ({ ...prev, ...snapshot.data() }));
+                    setWrongAnswers((prev) => ({ ...prev, ...(snapshot.data() as Record<string, number[]>) }));
                 }
             });
 
-            const cUnsub = onSnapshot(doc(db, 'global_state', 'purchasedCoupons'), (snapshot) => {
+            const cUnsub = onSnapshot(doc(db, 'global_state', 'purchasedCoupons'), (snapshot: FirestoreDocSnapshot) => {
                 if (snapshot.exists()) {
-                    setPurchasedCoupons((prev) => ({ ...prev, ...snapshot.data() }));
+                    setPurchasedCoupons((prev) => ({ ...prev, ...(snapshot.data() as Record<string, PurchasedCoupon[]>) }));
                 }
             });
 
-            const ppUnsub = onSnapshot(doc(db, 'global_state', 'photoProofs'), (snapshot) => {
+            const ppUnsub = onSnapshot(doc(db, 'global_state', 'photoProofs'), (snapshot: FirestoreDocSnapshot) => {
                 if (snapshot.exists()) {
-                    setPhotoProofs((prev) => ({ ...prev, ...snapshot.data() }));
+                    setPhotoProofs((prev) => ({ ...prev, ...(snapshot.data() as Record<string, PhotoProofSubmission[]>) }));
                 }
             });
 
-            const wvUnsub = onSnapshot(doc(db, 'global_state', 'weekVisibility'), (snapshot) => {
+            const wvUnsub = onSnapshot(doc(db, 'global_state', 'weekVisibility'), (snapshot: FirestoreDocSnapshot) => {
                 if (snapshot.exists()) {
-                    setWeekVisibility((prev) => ({ ...prev, ...snapshot.data() }));
+                    setWeekVisibility((prev) => ({ ...prev, ...(snapshot.data() as Record<string, boolean>) }));
                 }
             });
 
             // Initial scores merge without overwriting firebase completely, just pushing local ones
             try {
-                const currentScores = JSON.parse(localStorage.getItem(SCORE_STORAGE_KEY) || '{}');
+                const currentScores = recoverScoresFromLocalStorage();
                 if (Object.keys(currentScores).length > 0) {
                     await setDoc(doc(db, 'global_state', 'scores'), currentScores, { merge: true });
                 }
@@ -368,11 +523,101 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
     }, [userPins]);
 
     const addUser = (name: string, pin: string) => {
-        const currentIds = users.filter(u => u.id < 900).map(u => u.id);
+        const currentIds = [...users.map((u) => u.id), ...deletedUserIds].filter((id) => id < PROTECTED_USER_ID_MIN);
         const nextId = currentIds.length > 0 ? Math.max(...currentIds) + 1 : 1;
         const newUser: User = { id: nextId, name, pin };
+        setDeletedUserIds((prev) => prev.filter((id) => id !== nextId));
         pushUserUpdate(newUser);
         updatePin(nextId, pin);
+    };
+
+    const deleteUser = (userId: number) => {
+        if (!Number.isFinite(userId) || userId >= PROTECTED_USER_ID_MIN) {
+            return { ok: false as const, message: '보호된 계정은 삭제할 수 없습니다.' };
+        }
+
+        const userKey = userId.toString();
+
+        setUsers((prev) => prev.filter((user) => user.id !== userId));
+
+        if (selectedUserId === userId) {
+            setSelectedUserId(null);
+        }
+
+        setDeletedUserIds((prev) => {
+            if (prev.includes(userId)) return prev;
+            return [...prev, userId];
+        });
+
+        setScores((prev) => {
+            const next = { ...prev };
+            const scoreDeletePatch: Record<string, number | null> = {};
+
+            Object.keys(prev).forEach((scoreKey) => {
+                if (!scoreKey.startsWith(`${userId}_`)) return;
+                delete next[scoreKey];
+                scoreDeletePatch[scoreKey] = null;
+            });
+
+            if (Object.keys(scoreDeletePatch).length > 0) {
+                pushScoreUpdate(scoreDeletePatch);
+            }
+
+            return next;
+        });
+
+        setUserPins((prev) => {
+            if (!(userKey in prev)) return prev;
+            const next = { ...prev };
+            delete next[userKey];
+            return next;
+        });
+
+        setWrongAnswers((prev) => {
+            if (!(userKey in prev)) return prev;
+            const next = { ...prev };
+            delete next[userKey];
+            return next;
+        });
+
+        setPurchasedCoupons((prev) => {
+            if (!(userKey in prev)) return prev;
+            const next = { ...prev };
+            delete next[userKey];
+            return next;
+        });
+
+        setPhotoProofs((prev) => {
+            if (!(userKey in prev)) return prev;
+            const next = { ...prev };
+            delete next[userKey];
+            return next;
+        });
+
+        setDoc(doc(db, 'global_state', 'users'), {
+            [userId]: {
+                id: userId,
+                deleted: true,
+                deletedAt: new Date().toISOString(),
+            },
+        }, { merge: true }).catch((e: unknown) => {
+            console.error('Failed to mark user deleted', e);
+        });
+
+        setDoc(doc(db, 'global_state', 'userPins'), { [userKey]: deleteField() }, { merge: true }).catch((e: unknown) => {
+            console.error('Failed to delete user pin', e);
+        });
+        setDoc(doc(db, 'global_state', 'wrongAnswers'), { [userKey]: deleteField() }, { merge: true }).catch((e: unknown) => {
+            console.error('Failed to delete user wrong answers', e);
+        });
+        setDoc(doc(db, 'global_state', 'purchasedCoupons'), { [userKey]: deleteField() }, { merge: true }).catch((e: unknown) => {
+            console.error('Failed to delete user coupons', e);
+        });
+        setDoc(doc(db, 'global_state', 'photoProofs'), { [userKey]: deleteField() }, { merge: true }).catch((e: unknown) => {
+            console.error('Failed to delete user photo proofs', e);
+        });
+
+        return { ok: true as const };
     };
 
     useEffect(() => {
@@ -436,11 +681,8 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
     };
 
     const markAttendance = (userId: number) => {
-        const todayStr = new Date()
-            .toLocaleDateString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' })
-            .replace(/\. /g, '-')
-            .replace('.', '');
-        const attendanceKey = `${userId}_attendance_${todayStr}`;
+        const todayKey = toKstDateKey();
+        const attendanceKey = `${userId}_attendance_${todayKey}`;
 
         let isNewlyMarked = false;
         setScores(prev => {
@@ -526,15 +768,15 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
         oneVerseLength: number;
         thankOfferingsLength: number;
     }) => {
-        const todayKey = toDateKey(new Date());
+        const todayKey = toKstDateKey();
         const userProofs = photoProofs[userId.toString()] || [];
 
         if (userProofs.some((proof) => proof.submittedDateKey === todayKey)) {
-            return { ok: false as const, message: '하루에 1번만 사진 인증이 가능합니다.' };
+            return { ok: false as const, message: '?섎（??1踰덈쭔 ?ъ쭊 ?몄쬆??媛?ν빀?덈떎.' };
         }
 
         if (userProofs.some((proof) => proof.imageFingerprint === payload.imageFingerprint)) {
-            return { ok: false as const, message: '이전에 통과한 사진과 동일한 이미지입니다. 새 사진으로 인증해주세요.' };
+            return { ok: false as const, message: '?댁쟾???듦낵???ъ쭊怨??숈씪???대?吏?낅땲?? ???ъ쭊?쇰줈 ?몄쬆?댁＜?몄슂.' };
         }
 
         if (
@@ -542,7 +784,7 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
             payload.oneVerseLength < PHOTO_PROOF_MIN_CHARS ||
             payload.thankOfferingsLength < PHOTO_PROOF_MIN_CHARS
         ) {
-            return { ok: false as const, message: `판독 기준 미달: 각 항목 최소 ${PHOTO_PROOF_MIN_CHARS}자 필요` };
+            return { ok: false as const, message: `?먮룆 湲곗? 誘몃떖: 媛???ぉ 理쒖냼 ${PHOTO_PROOF_MIN_CHARS}???꾩슂` };
         }
 
         const awardedPoints = 20;
@@ -559,7 +801,8 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
         const submission: PhotoProofSubmission = {
             id: proofId,
             imageName: payload.imageName,
-            submittedAt: new Date().toLocaleString('ko-KR'),
+            submittedAt: new Date().toISOString(),
+            submittedAtMs: Date.now(),
             submittedDateKey: todayKey,
             imageFingerprint: payload.imageFingerprint,
             imageDataUrl: payload.imageDataUrl,
@@ -580,6 +823,63 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
 
         return { ok: true as const, points: awardedPoints };
     };
+
+    const getUserDailyActivity = React.useCallback((userId: number) => {
+        const records: Record<string, DailyQtActivity> = {};
+        const attendancePrefix = `${userId}_attendance_`;
+
+        Object.entries(scores).forEach(([key, value]) => {
+            if (!key.startsWith(attendancePrefix) || value <= 0) return;
+
+            const dateKey = normalizeDateKey(key.slice(attendancePrefix.length));
+            if (!dateKey) return;
+
+            if (!records[dateKey]) {
+                records[dateKey] = {
+                    dateKey,
+                    attended: false,
+                    qtVerified: false,
+                    qtPhotoUrls: [],
+                    proofs: [],
+                    timezone: 'Asia/Seoul',
+                };
+            }
+
+            records[dateKey].attended = true;
+        });
+
+        const userProofs = photoProofs[userId.toString()] || [];
+        userProofs.forEach((proof) => {
+            const dateKey = normalizeDateKey(proof.submittedDateKey) || normalizeDateKey(proof.submittedAt);
+            if (!dateKey) return;
+
+            if (!records[dateKey]) {
+                records[dateKey] = {
+                    dateKey,
+                    attended: false,
+                    qtVerified: false,
+                    qtPhotoUrls: [],
+                    proofs: [],
+                    timezone: 'Asia/Seoul',
+                };
+            }
+
+            records[dateKey].qtVerified = true;
+            records[dateKey].proofs.push(proof);
+
+            if (proof.imageDataUrl) {
+                records[dateKey].qtPhotoUrls.push(proof.imageDataUrl);
+            }
+        });
+
+        Object.values(records).forEach((record) => {
+            const deduped = Array.from(new Set(record.qtPhotoUrls));
+            record.qtPhotoUrls = deduped;
+            record.proofs.sort((a, b) => parseProofTimestamp(b.submittedAt, b.submittedAtMs, b.submittedDateKey) - parseProofTimestamp(a.submittedAt, a.submittedAtMs, a.submittedDateKey));
+        });
+
+        return records;
+    }, [photoProofs, scores]);
 
     const setScoreEntry = (scoreKey: string, score: number | null) => {
         setScores(prev => {
@@ -654,10 +954,10 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
         try {
             const parsed = JSON.parse(raw) as Partial<QuizBackupPayload>;
             if (!parsed || typeof parsed !== 'object') {
-                return { ok: false as const, message: '백업 파일 형식이 올바르지 않습니다.' };
+                return { ok: false as const, message: '諛깆뾽 ?뚯씪 ?뺤떇???щ컮瑜댁? ?딆뒿?덈떎.' };
             }
             if (!parsed.data || typeof parsed.data !== 'object') {
-                return { ok: false as const, message: '백업 데이터가 없습니다.' };
+                return { ok: false as const, message: '諛깆뾽 ?곗씠?곌? ?놁뒿?덈떎.' };
             }
 
             const incomingSelectedUserId = parsed.data.selectedUserId;
@@ -677,7 +977,7 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
                 typeof incomingPhotoProofs !== 'object' || incomingPhotoProofs === null ||
                 typeof incomingWeekVisibility !== 'object' || incomingWeekVisibility === null
             ) {
-                return { ok: false as const, message: '백업 데이터 검증에 실패했습니다.' };
+                return { ok: false as const, message: '諛깆뾽 ?곗씠??寃利앹뿉 ?ㅽ뙣?덉뒿?덈떎.' };
             }
 
             const normalizedPins = { ...(incomingPins as Record<string, string>) };
@@ -695,10 +995,11 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
                 ...defaultWeekVisibility,
                 ...(incomingWeekVisibility as Record<string, boolean>),
             });
+            setDeletedUserIds([]);
 
             return { ok: true as const };
         } catch {
-            return { ok: false as const, message: '백업 파일을 읽는 중 오류가 발생했습니다.' };
+            return { ok: false as const, message: '諛깆뾽 ?뚯씪???쎈뒗 以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎.' };
         }
     };
 
@@ -707,6 +1008,7 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
             value={{
                 users,
                 addUser,
+                deleteUser,
                 selectedUserId,
                 setSelectedUserId,
                 scores,
@@ -720,6 +1022,7 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
                 buyCoupon,
                 photoProofs,
                 certifyPhotoProof,
+                getUserDailyActivity,
                 setScoreEntry,
                 getUserTotalPoints,
                 getUserSpentPoints,
@@ -743,3 +1046,4 @@ export function useQuizContext() {
     }
     return context;
 }
+

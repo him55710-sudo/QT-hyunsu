@@ -1,6 +1,6 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, BarChart3, Download, KeyRound, Lock, LockOpen, ShieldAlert, Upload, Users } from 'lucide-react';
+import { ArrowLeft, BarChart3, Download, KeyRound, Lock, LockOpen, ShieldAlert, Trash2, Upload, Users } from 'lucide-react';
 import { useQuizContext } from '../context/QuizContext';
 import { ADMIN_PIN, TEACHER_ACCOUNT, WEEKS } from '../data/mockData';
 import ChangePinModal from '../components/ChangePinModal';
@@ -8,7 +8,7 @@ import PinModal from '../components/PinModal';
 
 export default function Admin() {
     const navigate = useNavigate();
-    const { scores, userPins, updatePin, getUserTotalPoints, getUserSpentPoints, getUserCurrentPoints, isWeekPublic, updateWeekVisibility, exportBackup, importBackup, users } = useQuizContext();
+    const { scores, userPins, updatePin, getUserTotalPoints, getUserSpentPoints, getUserCurrentPoints, isWeekPublic, updateWeekVisibility, exportBackup, importBackup, users, deleteUser } = useQuizContext();
 
     const [isChangePinModalOpen, setIsChangePinModalOpen] = useState(false);
     const [isAdminVerified, setIsAdminVerified] = useState(false);
@@ -26,9 +26,23 @@ export default function Admin() {
         alert('관리자 비밀번호가 변경되었습니다.');
     };
 
+    const allWeekIds = useMemo(() => {
+        const ids = new Set<number>(WEEKS.map((week) => week.id));
+
+        Object.keys(scores).forEach((scoreKey) => {
+            const match = scoreKey.match(/^(\d+)_(\d+)$/);
+            if (!match) return;
+
+            const weekId = Number(match[2]);
+            if (Number.isFinite(weekId)) ids.add(weekId);
+        });
+
+        return Array.from(ids).sort((a, b) => a - b);
+    }, [scores]);
+
     const studentData = useMemo(() => {
         return users.map((user) => {
-            const weeklyTotal = WEEKS.reduce((sum, week) => sum + (scores[`${user.id}_${week.id}`] || 0), 0);
+            const weeklyTotal = allWeekIds.reduce((sum, weekId) => sum + (scores[`${user.id}_${weekId}`] || 0), 0);
 
             const attendanceDays = Object.keys(scores).filter(
                 (key) => key.startsWith(`${user.id}_attendance_`) && scores[key] > 0
@@ -62,7 +76,7 @@ export default function Admin() {
                 currentPoints,
             };
         }).sort((a, b) => b.currentPoints - a.currentPoints);
-    }, [scores, getUserCurrentPoints, getUserSpentPoints, getUserTotalPoints]);
+    }, [allWeekIds, getUserCurrentPoints, getUserSpentPoints, getUserTotalPoints, scores, users]);
 
     const handleDownloadBackup = () => {
         const backupRaw = exportBackup();
@@ -96,6 +110,21 @@ export default function Admin() {
         } finally {
             if (fileInputRef.current) fileInputRef.current.value = '';
         }
+    };
+
+    const handleDeleteUser = (userId: number, userName: string) => {
+        const confirmed = window.confirm(
+            `${userName} 학생을 삭제할까요?\n삭제하면 점수, 출석/인증, 오답, 쿠폰 데이터가 함께 삭제됩니다.`
+        );
+        if (!confirmed) return;
+
+        const result = deleteUser(userId);
+        if (!result.ok) {
+            alert(result.message);
+            return;
+        }
+
+        alert(`${userName} 학생이 삭제되었습니다.`);
     };
 
     return (
@@ -217,7 +246,7 @@ export default function Admin() {
                         </div>
 
                         <div className="overflow-x-auto pb-1">
-                            <div className="min-w-[940px]">
+                            <div className="min-w-[1040px]">
                                 <div className="grid grid-cols-4 gap-2 mb-4">
                                     {studentData.map((student) => (
                                         <div key={`summary-${student.id}`} className="bg-white border border-slate-200 rounded-[12px] p-3">
@@ -238,6 +267,7 @@ export default function Admin() {
                                                 <th className="px-3 py-4 text-[12px] font-black text-[#8B95A1] text-center">출석(일/점)</th>
                                                 <th className="px-3 py-4 text-[12px] font-black text-[#8B95A1] text-center">사진(회/점)</th>
                                                 <th className="px-3 py-4 text-[12px] font-black text-[#8B95A1] text-center">사용포인트</th>
+                                                <th className="px-3 py-4 text-[12px] font-black text-[#8B95A1] text-center">관리</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -251,6 +281,21 @@ export default function Admin() {
                                                     <td className="px-3 py-4 text-center font-bold text-[#8B95A1]">{student.attendanceDays}일 / {student.attendancePoints}P</td>
                                                     <td className="px-3 py-4 text-center font-bold text-[#8B95A1]">{student.photoCount}회 / {student.photoPoints}P</td>
                                                     <td className="px-3 py-4 text-center font-bold text-[#8B95A1]">{student.spentPoints}P</td>
+                                                    <td className="px-3 py-4 text-center">
+                                                        {student.id >= 900 ? (
+                                                            <span className="inline-flex px-2.5 py-1 rounded-full text-[10px] font-black bg-slate-100 text-slate-400 border border-slate-200">
+                                                                보호 계정
+                                                            </span>
+                                                        ) : (
+                                                            <button
+                                                                onClick={() => handleDeleteUser(student.id, student.name)}
+                                                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-[10px] text-[11px] font-black border border-red-200 text-red-500 bg-red-50 hover:bg-red-100 active:scale-95"
+                                                            >
+                                                                <Trash2 className="w-3 h-3" />
+                                                                삭제
+                                                            </button>
+                                                        )}
+                                                    </td>
                                                 </tr>
                                             ))}
                                         </tbody>

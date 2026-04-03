@@ -78,4 +78,131 @@
   .hide-scrollbar::-webkit-scrollbar {
     display: none;
   }
+
+  .spring-blossom-haze {
+    background:
+      radial-gradient(110px 70px at 16% 8%, rgba(255, 219, 229, 0.42), transparent 70%),
+      radial-gradient(130px 90px at 82% 14%, rgba(255, 206, 221, 0.34), transparent 68%),
+      radial-gradient(100px 66px at 44% 22%, rgba(255, 230, 238, 0.26), transparent 72%);
+  }
+
+  .spring-petal-track {
+    position: absolute;
+    animation-name: spring-petal-fall;
+    animation-timing-function: linear;
+    animation-iteration-count: infinite;
+    will-change: transform;
+  }
+
+  .spring-petal-track-front {
+    filter: drop-shadow(0 4px 8px rgba(239, 122, 163, 0.28));
+    z-index: 4;
+  }
+
+  .spring-petal-track-mid {
+    z-index: 3;
+  }
+
+  .spring-petal-track-back {
+    filter: blur(0.35px);
+    z-index: 2;
+  }
+
+  .spring-petal {
+    display: block;
+    position: relative;
+    border-radius: 76% 64% 70% 58%;
+    transform-origin: center;
+    animation-name: spring-petal-sway, spring-petal-spin;
+    animation-duration: var(--petal-sway-duration), var(--petal-spin-duration);
+    animation-timing-function: ease-in-out, linear;
+    animation-iteration-count: infinite, infinite;
+    background: linear-gradient(150deg, rgba(255, 238, 244, 0.98), rgba(255, 189, 208, 0.95) 58%, rgba(255, 171, 196, 0.95));
+  }
+
+  .spring-petal::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: radial-gradient(40% 45% at 65% 35%, rgba(255, 255, 255, 0.62), transparent 75%);
+  }
+
+  .spring-petal-front {
+    box-shadow: 0 2px 7px rgba(239, 118, 158, 0.26);
+  }
+
+  .spring-petal-mid {
+    box-shadow: 0 2px 6px rgba(239, 118, 158, 0.18);
+  }
+
+  .spring-petal-back {
+    box-shadow: 0 1px 4px rgba(239, 118, 158, 0.12);
+  }
+
+  @keyframes spring-petal-fall {
+    0% {
+      transform: translate3d(0, -12vh, 0);
+    }
+
+    20% {
+      transform: translate3d(calc(var(--petal-drift) * 0.6), 18vh, 0);
+    }
+
+    45% {
+      transform: translate3d(calc(var(--petal-drift) * -0.2), 46vh, 0);
+    }
+
+    70% {
+      transform: translate3d(var(--petal-drift), 74vh, 0);
+    }
+
+    100% {
+      transform: translate3d(calc(var(--petal-drift) * -0.35), 118vh, 0);
+    }
+  }
+
+  @keyframes spring-petal-sway {
+    0%,
+    100% {
+      transform: translateX(0px) scale(1);
+    }
+
+    50% {
+      transform: translateX(calc(var(--petal-drift) * 0.14)) scale(0.95);
+    }
+  }
+
+  @keyframes spring-petal-spin {
+    0% {
+      rotate: 0deg;
+    }
+
+    100% {
+      rotate: 360deg;
+    }
+  }
+
+  .ember-glow {
+    animation: ember-pulse 2.2s ease-in-out infinite;
+  }
+
+  @keyframes ember-pulse {
+    0%,
+    100% {
+      box-shadow: 0 0 0 rgba(245, 158, 11, 0);
+    }
+
+    50% {
+      box-shadow: 0 0 0.75rem rgba(245, 158, 11, 0.45);
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spring-petal-track,
+  .spring-petal,
+  .ember-glow {
+    animation: none !important;
+  }
 }

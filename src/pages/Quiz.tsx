@@ -62,7 +62,6 @@ export default function Quiz() {
 
     const currentQ = questions[currentIndex];
     const isAnswered = selectedOption !== null;
-    const isCorrect = selectedOption === currentQ.correctAnswer;
 
     const handleOptionClick = (index: number) => {
         if (isAnswered) return;
@@ -83,14 +82,14 @@ export default function Quiz() {
             return;
         }
 
-        const finalCorrectCount = isCorrect ? scoreCount + 1 : scoreCount;
+        const finalCorrectCount = scoreCount;
         const finalScore = Math.round((finalCorrectCount / questions.length) * 100);
         saveScore(selectedUserId, weekIdNum, finalScore);
         setIsFinished(true);
     };
 
     if (isFinished) {
-        const finalCorrectCount = isCorrect ? scoreCount + 1 : scoreCount;
+        const finalCorrectCount = scoreCount;
         const finalScore = Math.round((finalCorrectCount / questions.length) * 100);
 
         return (
@@ -203,6 +202,9 @@ export default function Quiz() {
                                             <BookOpen className="w-4 h-4" /> 해설
                                         </span>
                                         {currentQ.explanation}
+                                    </p>
+                                    <p className="mt-2 text-[12px] text-[#7A8599] font-black">
+                                        본문: {currentQ.reference}
                                     </p>
                                 </motion.div>
                             )}

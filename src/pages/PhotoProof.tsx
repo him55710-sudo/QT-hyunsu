@@ -3,16 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { ArrowLeft, CalendarDays, Camera, CheckCircle2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuizContext } from '../context/QuizContext';
-
-const toDate = (dateKey: string) => {
-    const [y, m, d] = dateKey.split('-').map(Number);
-    return new Date(y, (m || 1) - 1, d || 1);
-};
-
-const formatDateKey = (dateKey: string) => {
-    const dt = toDate(dateKey);
-    return dt.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' });
-};
+import { formatDateKey, parseProofTimestamp } from '../utils/dateKst';
 
 export default function PhotoProof() {
     const navigate = useNavigate();
@@ -21,12 +12,10 @@ export default function PhotoProof() {
 
     const [selectedProofId, setSelectedProofId] = useState<string | null>(null);
 
-    const myProofs = photoProofs[(selectedUserId || '').toString()] || [];
-
-    const sortedProofs = useMemo(
-        () => [...myProofs].sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime()),
-        [myProofs]
-    );
+    const sortedProofs = useMemo(() => {
+        const myProofs = photoProofs[(selectedUserId || '').toString()] || [];
+        return [...myProofs].sort((a, b) => parseProofTimestamp(b.submittedAt, b.submittedAtMs, b.submittedDateKey) - parseProofTimestamp(a.submittedAt, a.submittedAtMs, a.submittedDateKey));
+    }, [photoProofs, selectedUserId]);
 
     const selectedProof = useMemo(
         () => sortedProofs.find((proof) => proof.id === selectedProofId) || null,

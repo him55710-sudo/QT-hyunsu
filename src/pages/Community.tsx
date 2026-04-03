@@ -22,8 +22,8 @@ export default function Community() {
         const q = query(collection(db, 'posts'), orderBy('createdAt', 'desc'));
 
         // onSnapshot: 누군가 새 글을 쓰면 자동으로 화면을 업데이트해줍니다.
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const fetchedPosts = snapshot.docs.map(doc => ({
+        const unsubscribe = onSnapshot(q, (snapshot: any) => {
+            const fetchedPosts = snapshot.docs.map((doc: any) => ({
                 id: doc.id,
                 ...doc.data()
             }));
