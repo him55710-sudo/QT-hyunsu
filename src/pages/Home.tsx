@@ -189,6 +189,11 @@ const getInitialQuizMonthId = () => {
     return QUIZ_MONTHS[QUIZ_MONTHS.length - 1]?.id || '2026-04';
 };
 
+const getQuizMonthDisplayTitle = (title: string) => {
+    if (title.includes('디도서-히브리서')) return '디도서 · 히브리서 외';
+    return title;
+};
+
 export default function Home() {
     const navigate = useNavigate();
     const { selectedUserId, setSelectedUserId, markAttendance, scores, certifyPhotoProof, userPins, updatePin, isWeekPublic, users, addUser, getUserDailyActivity } = useQuizContext();
@@ -215,7 +220,11 @@ export default function Home() {
 
     const currentUser = users.find((u) => u.id === selectedUserId);
     const activeQuizMonth = QUIZ_MONTHS.find((month) => month.id === activeQuizMonthId);
+    const activeQuizMonthIndex = Math.max(QUIZ_MONTHS.findIndex((month) => month.id === activeQuizMonthId), 0);
+    const canMoveToPrevQuizMonth = activeQuizMonthIndex > 0;
+    const canMoveToNextQuizMonth = activeQuizMonthIndex < QUIZ_MONTHS.length - 1;
     const quizWeeks = useMemo(() => WEEKS.filter((week) => week.monthId === activeQuizMonthId), [activeQuizMonthId]);
+    const activeQuizMonthDisplayTitle = activeQuizMonth ? getQuizMonthDisplayTitle(activeQuizMonth.title) : '';
 
     const totalPoints = useMemo(() => {
         if (!selectedUserId) return 0;
@@ -291,6 +300,12 @@ export default function Home() {
             return;
         }
         navigate(`/quiz/${weekId}`);
+    };
+
+    const handleQuizMonthStep = (direction: -1 | 1) => {
+        const nextMonth = QUIZ_MONTHS[activeQuizMonthIndex + direction];
+        if (!nextMonth) return;
+        setActiveQuizMonthId(nextMonth.id);
     };
 
     const handleLogout = () => {
@@ -642,28 +657,61 @@ export default function Home() {
                         <button onClick={() => navigate('/leaderboard')} className="text-[12px] text-[#0064FF] font-black hover:opacity-70 transition-opacity">명예의 전당</button>
                     </div>
 
-                    <div className="grid grid-cols-3 gap-2 mb-3">
-                        {QUIZ_MONTHS.map((month) => {
-                            const isActive = month.id === activeQuizMonthId;
-                            return (
-                                <button
-                                    key={month.id}
-                                    onClick={() => setActiveQuizMonthId(month.id)}
-                                    className={`rounded-[14px] border px-3 py-2.5 text-left transition-colors ${isActive
-                                        ? 'bg-[#0064FF] border-[#0064FF] text-white'
-                                        : 'bg-[#F8FAFC] border-slate-200 text-[#4E5968] hover:bg-blue-50'
-                                        }`}
+                    <div className="flex items-stretch gap-2 mb-3">
+                        <button
+                            type="button"
+                            onClick={() => handleQuizMonthStep(-1)}
+                            disabled={!canMoveToPrevQuizMonth}
+                            aria-label="이전 달 퀴즈 보기"
+                            className={`w-11 rounded-[16px] border flex items-center justify-center transition-all active:scale-95 ${canMoveToPrevQuizMonth
+                                ? 'bg-white border-blue-100 text-[#0064FF] shadow-sm hover:bg-blue-50'
+                                : 'bg-slate-50 border-slate-100 text-slate-300'
+                                }`}
+                        >
+                            <ChevronLeft className="w-4 h-4" />
+                        </button>
+
+                        <AnimatePresence mode="wait" initial={false}>
+                            {activeQuizMonth && (
+                                <motion.div
+                                    key={activeQuizMonth.id}
+                                    initial={{ opacity: 0, x: 18 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    exit={{ opacity: 0, x: -18 }}
+                                    transition={{ duration: 0.18, ease: 'easeOut' }}
+                                    className="flex-1 rounded-[18px] border border-blue-100 bg-gradient-to-br from-[#F8FBFF] via-white to-[#EEF5FF] px-4 py-3.5 shadow-[0_8px_24px_rgba(0,100,255,0.08)]"
                                 >
-                                    <p className={`text-[10px] font-black ${isActive ? 'text-blue-100' : 'text-[#8B95A1]'}`}>{month.label}</p>
-                                    <p className="text-[13px] font-black mt-0.5">{month.title}</p>
-                                </button>
-                            );
-                        })}
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div>
+                                            <p className="text-[10px] font-black text-[#8B95A1] tracking-tight">월별 퀴즈</p>
+                                            <p className="text-[18px] font-black text-[#191F28] mt-0.5">{activeQuizMonth.label}</p>
+                                            <p className="text-[13px] font-black text-[#0064FF] mt-1 leading-snug">{activeQuizMonthDisplayTitle}</p>
+                                        </div>
+                                        <div className="shrink-0 rounded-full bg-[#0064FF] text-white px-2.5 py-1 text-[11px] font-black">
+                                            {activeQuizMonthIndex + 1}/{QUIZ_MONTHS.length}
+                                        </div>
+                                    </div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+
+                        <button
+                            type="button"
+                            onClick={() => handleQuizMonthStep(1)}
+                            disabled={!canMoveToNextQuizMonth}
+                            aria-label="다음 달 퀴즈 보기"
+                            className={`w-11 rounded-[16px] border flex items-center justify-center transition-all active:scale-95 ${canMoveToNextQuizMonth
+                                ? 'bg-white border-blue-100 text-[#0064FF] shadow-sm hover:bg-blue-50'
+                                : 'bg-slate-50 border-slate-100 text-slate-300'
+                                }`}
+                        >
+                            <ChevronRight className="w-4 h-4" />
+                        </button>
                     </div>
 
                     {activeQuizMonth && (
                         <p className="text-[12px] text-[#8B95A1] font-bold mb-3">
-                            {activeQuizMonth.label} · {activeQuizMonth.title} 퀴즈
+                            {activeQuizMonth.label} · {activeQuizMonthDisplayTitle} 퀴즈
                         </p>
                     )}
 
