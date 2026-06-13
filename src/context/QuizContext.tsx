@@ -123,6 +123,12 @@ const defaultWeekVisibility: Record<string, boolean> = WEEKS.reduce((acc, week) 
     return acc;
 }, {} as Record<string, boolean>);
 
+const isWeekAvailableByDate = (weekId: number, todayKey: string = toKstDateKey()) => {
+    const week = WEEKS.find((item) => item.id === weekId);
+    if (!week?.availableFrom) return false;
+    return week.availableFrom <= todayKey;
+};
+
 const PROTECTED_USER_ID_MIN = 900;
 
 const parseDeletedUserIds = (raw: unknown) => {
@@ -1064,7 +1070,7 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
     };
 
     const isWeekPublic = (weekId: number) => {
-        return Boolean(weekVisibility[weekId.toString()]);
+        return isWeekAvailableByDate(weekId) || Boolean(weekVisibility[weekId.toString()]);
     };
 
     const updateWeekVisibility = (weekId: number, isPublic: boolean) => {

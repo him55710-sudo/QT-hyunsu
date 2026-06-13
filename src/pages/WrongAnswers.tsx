@@ -8,7 +8,6 @@ import { QUIZ_MONTHS, WEEKS } from '../data/mockData';
 import { formatDateKey, normalizeDateKey, toKstDateKey } from '../utils/dateKst';
 
 const MONTH_BUCKETS = [
-    { key: '2026-03', label: '2026년 3월' },
     ...QUIZ_MONTHS.map((month) => ({ key: month.id, label: month.label })),
 ] as const;
 
