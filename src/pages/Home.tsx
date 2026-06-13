@@ -7,7 +7,6 @@ import { ADMIN_PIN, QUIZ_MONTHS, WEEKS } from '../data/mockData';
 import { useQuizContext, type DailyQtActivity } from '../context/QuizContext';
 import PinModal from '../components/PinModal';
 import ChangePinModal from '../components/ChangePinModal';
-import SpringPetals from '../components/SpringPetals';
 import { formatDateKey, parseProofTimestamp, toKstDateKey } from '../utils/dateKst';
 
 type OcrSummary = {
@@ -388,23 +387,19 @@ export default function Home() {
     const selectedProof = selectedProofs[selectedProofIndex] || null;
 
     return (
-        <div className="relative flex flex-col min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top,#fff5f3_0%,#f4f8ff_42%,#edf4ff_100%)] text-[#191F28]">
-            <SpringPetals variant="background" className="z-0" />
-            <div className="pointer-events-none absolute -top-16 left-[-8%] w-56 h-56 rounded-full bg-[#ffd7df]/45 blur-3xl" />
-            <div className="pointer-events-none absolute top-24 right-[-14%] w-72 h-72 rounded-full bg-[#d9ebff]/70 blur-3xl" />
-
-            <div className="relative z-10 px-5 pt-14 pb-5">
+        <div className="flex flex-col min-h-screen bg-[#F2F6FF] text-[#191F28]">
+            <div className="px-5 pt-14 pb-5">
                 <motion.div
                     initial={{ opacity: 0, y: -10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="rounded-[28px] p-6 shadow-[0_10px_34px_rgba(73,96,144,0.2)] border border-white/70 bg-gradient-to-br from-[#f88ea4] via-[#ffb3a8] to-[#7aa9ff]"
+                    className="bg-[#0064FF] rounded-[24px] p-6 shadow-[0_8px_32px_rgba(0,100,255,0.25)]"
                 >
                     <div className="flex items-center gap-3 mb-5">
-                        <div className="w-10 h-10 bg-white/25 rounded-full flex items-center justify-center">
+                        <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
                             <BookOpen className="w-5 h-5 text-white" />
                         </div>
                         <div>
-                            <p className="text-[13px] text-[#fff4f7] font-bold">2026 봄 QT 시즌</p>
+                            <p className="text-[13px] text-blue-200 font-bold">고등부 QT 퀴즈</p>
                             <p className="text-[15px] font-black text-white">{currentUser ? `${currentUser.name} 님` : '이름을 선택해주세요'}</p>
                         </div>
                     </div>
@@ -835,8 +830,6 @@ export default function Home() {
                     </motion.div>
                 )}
             </AnimatePresence>
-
-            <SpringPetals variant="screen" className="z-20" />
         </div>
     );
 }

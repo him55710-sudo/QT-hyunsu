@@ -636,8 +636,8 @@ export const QUIZ_DATA: Record<string, Question[]> = {
         {
             id: 807,
             text: '도피성 제도의 핵심 목적은 무엇인가?',
-            options: ['모든 죄를 처벌하지 않기 위해', '실수로 사람을 죽인 자를 공정한 재판 전까지 보호하기 위해', '전쟁 병력을 숨기기 위해', '이방인을 추방하기 위해'],
-            correctAnswer: 1,
+            options: ['모든 죄를 처벌하지 않기 위해', '전쟁 병력을 숨기기 위해', '실수로 사람을 죽인 자를 공정한 재판 전까지 보호하기 위해', '이방인을 추방하기 위해'],
+            correctAnswer: 2,
             explanation: '도피성은 고의 살인과 실수로 인한 살인을 구별하고, 보복의 악순환을 막으며 공정한 판단을 가능하게 했습니다.',
             reference: '민수기 35:9-15',
         },
@@ -972,8 +972,8 @@ export const QUIZ_DATA: Record<string, Question[]> = {
         {
             id: 1208,
             text: '신명기 34장에서 모세의 죽음 이후 지도자로 인정받은 사람은?',
-            options: ['갈렙', '아론', '미리암', '여호수아'],
-            correctAnswer: 3,
+            options: ['갈렙', '아론', '여호수아', '미리암'],
+            correctAnswer: 2,
             explanation: '여호수아는 지혜의 영이 충만했고, 이스라엘 자손은 모세가 명한 대로 그에게 순종했습니다.',
             reference: '신명기 34:9',
         },
