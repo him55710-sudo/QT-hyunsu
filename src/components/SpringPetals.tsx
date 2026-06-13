@@ -118,7 +118,7 @@ export default function SpringPetals({ variant = 'background', className = '' }:
                         className={`spring-petal spring-petal-${petal.layer}`}
                         style={{
                             width: `${petal.size}px`,
-                            height: `${petal.size * 0.72}px`,
+                            height: `${petal.size * 0.98}px`,
                         }}
                     />
                 </span>

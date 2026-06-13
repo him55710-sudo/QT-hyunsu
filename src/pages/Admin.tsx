@@ -8,11 +8,12 @@ import PinModal from '../components/PinModal';
 
 export default function Admin() {
     const navigate = useNavigate();
-    const { scores, userPins, updatePin, getUserTotalPoints, getUserSpentPoints, getUserCurrentPoints, isWeekPublic, updateWeekVisibility, exportBackup, importBackup, users, deleteUser } = useQuizContext();
+    const { scores, userPins, updatePin, getUserTotalPoints, getUserSpentPoints, getUserCurrentPoints, isWeekPublic, updateWeekVisibility, exportBackup, importBackup, users, deleteUser, setScoreEntry } = useQuizContext();
 
     const [isChangePinModalOpen, setIsChangePinModalOpen] = useState(false);
     const [isAdminVerified, setIsAdminVerified] = useState(false);
     const [isAdminPinModalOpen, setIsAdminPinModalOpen] = useState(true);
+    const [manualScoreInput, setManualScoreInput] = useState<Record<number, string>>({});
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
@@ -127,6 +128,59 @@ export default function Admin() {
         alert(`${userName} 학생이 삭제되었습니다.`);
     };
 
+    useEffect(() => {
+        setManualScoreInput((prev) => {
+            const next: Record<number, string> = { ...prev };
+            studentData.forEach((student) => {
+                if (next[student.id] === undefined) {
+                    next[student.id] = student.manualAdjustment ? String(student.manualAdjustment) : '';
+                }
+            });
+            return next;
+        });
+    }, [studentData]);
+
+    const handleManualScoreChange = (userId: number, value: string) => {
+        setManualScoreInput((prev) => ({
+            ...prev,
+            [userId]: value,
+        }));
+    };
+
+    const handleManualScoreSave = (userId: number) => {
+        const raw = (manualScoreInput[userId] || '').trim();
+        const scoreKey = `${userId}_manual_adjustment`;
+
+        if (!raw) {
+            setScoreEntry(scoreKey, null);
+            setManualScoreInput((prev) => ({
+                ...prev,
+                [userId]: '',
+            }));
+            return;
+        }
+
+        const parsed = Number(raw);
+        if (!Number.isFinite(parsed)) {
+            alert('점수는 숫자만 입력해주세요.');
+            return;
+        }
+
+        setScoreEntry(scoreKey, Math.floor(parsed));
+        setManualScoreInput((prev) => ({
+            ...prev,
+            [userId]: String(Math.floor(parsed)),
+        }));
+    };
+
+    const handleManualScoreReset = (userId: number) => {
+        setScoreEntry(`${userId}_manual_adjustment`, null);
+        setManualScoreInput((prev) => ({
+            ...prev,
+            [userId]: '',
+        }));
+    };
+
     return (
         <div className="flex flex-col min-h-screen bg-[#F8FAFC]">
             <header className="px-5 pt-14 pb-4 sticky top-0 bg-[#F8FAFC]/95 z-20 border-b border-slate-200">
@@ -187,7 +241,7 @@ export default function Admin() {
                                             className="flex items-center justify-between bg-[#F8FAFC] border border-slate-200 rounded-[14px] px-3 py-3"
                                         >
                                             <div className="flex-1 min-w-0">
-                                                <p className="text-[13px] font-black text-[#191F28]">{week.title}</p>
+                                                <p className="text-[13px] font-black text-[#191F28]">{week.monthLabel} · {week.title}</p>
                                                 <p className="text-[11px] font-bold text-[#8B95A1] truncate pr-2">{week.description}</p>
                                             </div>
                                             <button
@@ -245,8 +299,15 @@ export default function Admin() {
                             <h2 className="text-[14px] font-black text-[#8B95A1]">학생별 포인트 현황</h2>
                         </div>
 
+                        <div className="bg-blue-50 border border-blue-100 rounded-[14px] p-3 mb-4">
+                            <p className="text-[12px] font-black text-[#2F63D9]">관리자 점수 수정 권한 활성화</p>
+                            <p className="text-[11px] text-[#5B6B8B] font-bold mt-1">
+                                점수 조정 칸에서 학생별 보정 점수를 입력하면 즉시 반영됩니다. 음수 입력 시 차감됩니다.
+                            </p>
+                        </div>
+
                         <div className="overflow-x-auto pb-1">
-                            <div className="min-w-[1040px]">
+                            <div className="min-w-[1240px]">
                                 <div className="grid grid-cols-4 gap-2 mb-4">
                                     {studentData.map((student) => (
                                         <div key={`summary-${student.id}`} className="bg-white border border-slate-200 rounded-[12px] p-3">
@@ -267,6 +328,7 @@ export default function Admin() {
                                                 <th className="px-3 py-4 text-[12px] font-black text-[#8B95A1] text-center">출석(일/점)</th>
                                                 <th className="px-3 py-4 text-[12px] font-black text-[#8B95A1] text-center">사진(회/점)</th>
                                                 <th className="px-3 py-4 text-[12px] font-black text-[#8B95A1] text-center">사용포인트</th>
+                                                <th className="px-3 py-4 text-[12px] font-black text-[#8B95A1] text-center">점수 조정</th>
                                                 <th className="px-3 py-4 text-[12px] font-black text-[#8B95A1] text-center">관리</th>
                                             </tr>
                                         </thead>
@@ -281,6 +343,39 @@ export default function Admin() {
                                                     <td className="px-3 py-4 text-center font-bold text-[#8B95A1]">{student.attendanceDays}일 / {student.attendancePoints}P</td>
                                                     <td className="px-3 py-4 text-center font-bold text-[#8B95A1]">{student.photoCount}회 / {student.photoPoints}P</td>
                                                     <td className="px-3 py-4 text-center font-bold text-[#8B95A1]">{student.spentPoints}P</td>
+                                                    <td className="px-3 py-4 text-center">
+                                                        {student.id >= 900 ? (
+                                                            <span className="inline-flex px-2.5 py-1 rounded-full text-[10px] font-black bg-slate-100 text-slate-400 border border-slate-200">
+                                                                보호 계정
+                                                            </span>
+                                                        ) : (
+                                                            <>
+                                                                <div className="flex items-center justify-center gap-1.5">
+                                                                    <input
+                                                                        type="number"
+                                                                        inputMode="numeric"
+                                                                        value={manualScoreInput[student.id] ?? ''}
+                                                                        onChange={(event) => handleManualScoreChange(student.id, event.target.value)}
+                                                                        className="w-24 px-2 py-1.5 rounded-[10px] border border-slate-300 text-[12px] font-black text-[#191F28] text-right bg-white"
+                                                                        placeholder="0"
+                                                                    />
+                                                                    <button
+                                                                        onClick={() => handleManualScoreSave(student.id)}
+                                                                        className="px-2.5 py-1.5 rounded-[10px] text-[11px] font-black border border-blue-200 bg-blue-50 text-[#0064FF] hover:bg-blue-100 active:scale-95"
+                                                                    >
+                                                                        저장
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => handleManualScoreReset(student.id)}
+                                                                        className="px-2.5 py-1.5 rounded-[10px] text-[11px] font-black border border-slate-300 bg-white text-[#6B7280] hover:bg-slate-100 active:scale-95"
+                                                                    >
+                                                                        초기화
+                                                                    </button>
+                                                                </div>
+                                                                <p className="mt-1 text-[10px] font-bold text-[#9CA3AF]">현재 보정 {student.manualAdjustment}P</p>
+                                                            </>
+                                                        )}
+                                                    </td>
                                                     <td className="px-3 py-4 text-center">
                                                         {student.id >= 900 ? (
                                                             <span className="inline-flex px-2.5 py-1 rounded-full text-[10px] font-black bg-slate-100 text-slate-400 border border-slate-200">

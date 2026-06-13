@@ -4,6 +4,8 @@ import { ArrowLeft, CheckCircle2, XCircle, BookOpen } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useQuizContext } from '../context/QuizContext';
 import { QUIZ_DATA } from '../data/quizData';
+import { WEEKS } from '../data/mockData';
+import { toKstDateKey } from '../utils/dateKst';
 
 export default function Quiz() {
     const { weekId } = useParams();
@@ -12,6 +14,7 @@ export default function Quiz() {
 
     const weekIdNum = Number(weekId);
     const questions = weekId ? QUIZ_DATA[weekId] : undefined;
+    const weekInfo = WEEKS.find((week) => week.id === weekIdNum);
 
     const [currentIndex, setCurrentIndex] = useState(0);
     const [selectedOption, setSelectedOption] = useState<number | null>(null);
@@ -71,7 +74,7 @@ export default function Quiz() {
             setScoreCount((prev) => prev + 1);
         } else {
             const globalQuestionId = weekIdNum * 100 + currentIndex;
-            addWrongAnswer(selectedUserId, globalQuestionId);
+            addWrongAnswer(selectedUserId, globalQuestionId, toKstDateKey());
         }
     };
 
@@ -131,8 +134,13 @@ export default function Quiz() {
                 <button onClick={() => navigate(-1)} className="p-2 bg-white rounded-full border border-blue-100 shadow-sm active:scale-90">
                     <ArrowLeft className="w-5 h-5 text-[#8B95A1]" />
                 </button>
-                <div className="text-[13px] font-black text-[#8B95A1] bg-white px-4 py-1.5 rounded-full border border-blue-100 shadow-sm">
-                    <span className="text-[#0064FF]">{currentIndex + 1}</span> / {questions.length}
+                <div className="min-w-0 text-center bg-white px-4 py-1.5 rounded-[14px] border border-blue-100 shadow-sm">
+                    <p className="text-[11px] font-black text-[#8B95A1] truncate">
+                        {weekInfo ? `${weekInfo.monthLabel} · ${weekInfo.title}` : '주차 퀴즈'}
+                    </p>
+                    <p className="text-[13px] font-black text-[#8B95A1]">
+                        <span className="text-[#0064FF]">{currentIndex + 1}</span> / {questions.length}
+                    </p>
                 </div>
                 <div className="w-9" />
             </header>

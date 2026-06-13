@@ -1,4 +1,4 @@
-﻿import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState } from 'react';
 import { doc, setDoc, onSnapshot, deleteField, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { ADMIN_PIN, MOCK_SCORES, MOCK_USERS, WEEKS } from '../data/mockData';
@@ -37,6 +37,11 @@ export interface PhotoProofSubmission {
     points: number;
 }
 
+export interface WrongAnswerEntry {
+    questionIndex: number;
+    submittedDateKey: string;
+}
+
 export interface DailyQtActivity {
     dateKey: string;
     attended: boolean;
@@ -58,7 +63,7 @@ type QuizBackupPayload = {
         selectedUserId: number | null;
         scores: Record<string, number>;
         userPins: Record<string, string>;
-        wrongAnswers: Record<string, number[]>;
+        wrongAnswers: Record<string, WrongAnswerEntry[]>;
         purchasedCoupons: Record<string, PurchasedCoupon[]>;
         photoProofs: Record<string, PhotoProofSubmission[]>;
         weekVisibility: Record<string, boolean>;
@@ -76,8 +81,8 @@ type QuizContextType = {
     markAttendance: (userId: number) => boolean;
     userPins: Record<string, string>;
     updatePin: (targetId: number | 'admin', newPin: string) => void;
-    wrongAnswers: Record<string, number[]>;
-    addWrongAnswer: (userId: number, questionIndex: number) => void;
+    wrongAnswers: Record<string, WrongAnswerEntry[]>;
+    addWrongAnswer: (userId: number, questionIndex: number, submittedDateKey?: string) => void;
     purchasedCoupons: Record<string, PurchasedCoupon[]>;
     buyCoupon: (userId: number, coupon: Omit<PurchasedCoupon, 'id' | 'purchasedAt'>) => boolean;
     photoProofs: Record<string, PhotoProofSubmission[]>;
@@ -125,6 +130,93 @@ const parseDeletedUserIds = (raw: unknown) => {
     return raw
         .map((value) => Number(value))
         .filter((value, index, self) => Number.isFinite(value) && value > 0 && self.indexOf(value) === index);
+};
+
+const normalizeWrongAnswerEntry = (raw: unknown): WrongAnswerEntry | null => {
+    if (typeof raw === 'number') {
+        const questionIndex = Math.floor(raw);
+        if (!Number.isFinite(questionIndex) || questionIndex < 0) return null;
+        return {
+            questionIndex,
+            submittedDateKey: '',
+        };
+    }
+
+    if (!raw || typeof raw !== 'object') return null;
+
+    const source = raw as {
+        questionIndex?: unknown;
+        submittedDateKey?: unknown;
+        dateKey?: unknown;
+    };
+
+    const questionIndex = Math.floor(Number(source.questionIndex));
+    if (!Number.isFinite(questionIndex) || questionIndex < 0) return null;
+
+    const rawDate =
+        typeof source.submittedDateKey === 'string'
+            ? source.submittedDateKey
+            : typeof source.dateKey === 'string'
+                ? source.dateKey
+                : '';
+
+    return {
+        questionIndex,
+        submittedDateKey: normalizeDateKey(rawDate) || '',
+    };
+};
+
+const mergeWrongAnswerLists = (...sources: WrongAnswerEntry[][]) => {
+    const merged = new Map<number, WrongAnswerEntry>();
+
+    sources.forEach((list) => {
+        list.forEach((entry) => {
+            const prev = merged.get(entry.questionIndex);
+            if (!prev) {
+                merged.set(entry.questionIndex, entry);
+                return;
+            }
+
+            const prevDate = normalizeDateKey(prev.submittedDateKey || '') || '';
+            const nextDate = normalizeDateKey(entry.submittedDateKey || '') || '';
+            if (nextDate && (!prevDate || nextDate > prevDate)) {
+                merged.set(entry.questionIndex, entry);
+            }
+        });
+    });
+
+    return Array.from(merged.values()).sort((a, b) => a.questionIndex - b.questionIndex);
+};
+
+const parseWrongAnswerRecord = (raw: unknown) => {
+    if (!raw || typeof raw !== 'object') return {} as Record<string, WrongAnswerEntry[]>;
+
+    const parsed: Record<string, WrongAnswerEntry[]> = {};
+    Object.entries(raw as Record<string, unknown>).forEach(([userKey, value]) => {
+        if (!/^\d+$/.test(userKey) || !Array.isArray(value)) return;
+
+        const normalizedList = value
+            .map(normalizeWrongAnswerEntry)
+            .filter((entry): entry is WrongAnswerEntry => Boolean(entry));
+        if (normalizedList.length === 0) return;
+
+        parsed[userKey] = mergeWrongAnswerLists(normalizedList);
+    });
+
+    return parsed;
+};
+
+const mergeWrongAnswerRecords = (...sources: Record<string, WrongAnswerEntry[]>[]) => {
+    const merged: Record<string, WrongAnswerEntry[]> = {};
+
+    sources.forEach((source) => {
+        Object.entries(source).forEach(([userKey, list]) => {
+            if (!Array.isArray(list)) return;
+            merged[userKey] = mergeWrongAnswerLists(merged[userKey] || [], list);
+        });
+    });
+
+    return merged;
 };
 
 const parseScoreRecord = (raw: unknown) => {
@@ -215,11 +307,27 @@ const recoverScoresFromLocalStorage = () => {
 };
 
 export function QuizProvider({ children }: { children: React.ReactNode }) {
-    const [users, setUsers] = useState<User[]>(MOCK_USERS);
+    const [users, setUsers] = useState<User[]>(() => {
+        try {
+            const savedDeleted = localStorage.getItem(DELETED_USERS_STORAGE_KEY);
+            const deletedIds = savedDeleted ? parseDeletedUserIds(JSON.parse(savedDeleted)) : [];
+            return MOCK_USERS.filter((user) => !deletedIds.includes(user.id));
+        } catch {
+            return MOCK_USERS;
+        }
+    });
 
     const [selectedUserId, setSelectedUserId] = useState<number | null>(() => {
         const saved = localStorage.getItem('qt_quiz_user_v2');
-        return saved ? parseInt(saved, 10) : null;
+        if (!saved) return null;
+        const parsedId = parseInt(saved, 10);
+        // 초기화 시점에 삭제된 사용자인지 확인
+        const savedDeleted = localStorage.getItem(DELETED_USERS_STORAGE_KEY);
+        try {
+            const deletedIds = savedDeleted ? parseDeletedUserIds(JSON.parse(savedDeleted)) : [];
+            if (deletedIds.includes(parsedId)) return null;
+        } catch { /* ignore */ }
+        return parsedId;
     });
 
     const [deletedUserIds, setDeletedUserIds] = useState<number[]>(() => {
@@ -251,12 +359,14 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
         return {};
     });
 
-    const [wrongAnswers, setWrongAnswers] = useState<Record<string, number[]>>(() => {
+    const [wrongAnswers, setWrongAnswers] = useState<Record<string, WrongAnswerEntry[]>>(() => {
         try {
             const saved = localStorage.getItem(WRONG_ANSWER_STORAGE_KEY);
             if (saved) {
                 const parsed = JSON.parse(saved);
-                if (typeof parsed === 'object' && parsed !== null) return parsed;
+                if (typeof parsed === 'object' && parsed !== null) {
+                    return parseWrongAnswerRecord(parsed);
+                }
             }
         } catch (e) {
             console.error('Failed to parse wrong answers', e);
@@ -324,6 +434,16 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
     }, [deletedUserIds]);
 
     useEffect(() => {
+        if (selectedUserId !== null && users.length > 0) {
+            const userExists = users.some(u => u.id === selectedUserId);
+            if (!userExists) {
+                console.log(`User ${selectedUserId} no longer exists, logging out.`);
+                setSelectedUserId(null);
+            }
+        }
+    }, [users, selectedUserId]);
+
+    useEffect(() => {
         setUsers((prev) => prev.filter((user) => !deletedUserIds.includes(user.id)));
     }, [deletedUserIds]);
 
@@ -372,10 +492,13 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
                 setUserPins(currentPins);
 
                 // Initialize wrong answers
-                let currentWrongAnswers = { ...wrongAnswers };
+                let currentWrongAnswers = mergeWrongAnswerRecords(wrongAnswers);
                 const wrongAnswersSnap = await getDoc(doc(db, 'global_state', 'wrongAnswers'));
                 if (wrongAnswersSnap.exists()) {
-                    currentWrongAnswers = { ...currentWrongAnswers, ...wrongAnswersSnap.data() };
+                    currentWrongAnswers = mergeWrongAnswerRecords(
+                        currentWrongAnswers,
+                        parseWrongAnswerRecord(wrongAnswersSnap.data())
+                    );
                 } else {
                     await setDoc(doc(db, 'global_state', 'wrongAnswers'), currentWrongAnswers, { merge: true });
                 }
@@ -420,7 +543,13 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
                 if (snapshot.exists()) {
                     const data = snapshot.data();
                     const cmap = new Map<number, User>();
-                    MOCK_USERS.forEach((u) => cmap.set(u.id, u));
+                    
+                    // 기본 사용자 목록 추가 (이미 삭제된 ID는 제외)
+                    MOCK_USERS.forEach((u) => {
+                        if (!deletedUserIdsRef.current.includes(u.id)) {
+                            cmap.set(u.id, u);
+                        }
+                    });
 
                     Object.values(data).forEach((raw) => {
                         if (!raw || typeof raw !== 'object') return;
@@ -430,6 +559,11 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
 
                         if (entry.deleted) {
                             cmap.delete(entry.id);
+                            // 다른 기기에서 삭제된 경우에도 로컬 삭제 목록 동기화
+                            setDeletedUserIds((prev) => {
+                                if (prev.includes(entry.id)) return prev;
+                                return [...prev, entry.id];
+                            });
                             return;
                         }
 
@@ -441,6 +575,7 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
                         });
                     });
 
+                    // 로컬 삭제 목록 최후 필터링
                     deletedUserIdsRef.current.forEach((deletedId) => {
                         cmap.delete(deletedId);
                     });
@@ -465,7 +600,7 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
 
             const wUnsub = onSnapshot(doc(db, 'global_state', 'wrongAnswers'), (snapshot: FirestoreDocSnapshot) => {
                 if (snapshot.exists()) {
-                    setWrongAnswers((prev) => ({ ...prev, ...(snapshot.data() as Record<string, number[]>) }));
+                    setWrongAnswers((prev) => mergeWrongAnswerRecords(prev, parseWrongAnswerRecord(snapshot.data())));
                 }
             });
 
@@ -710,16 +845,26 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
         });
     };
 
-    const addWrongAnswer = (userId: number, questionIndex: number) => {
+    const addWrongAnswer = (userId: number, questionIndex: number, submittedDateKey: string = toKstDateKey()) => {
+        const normalizedQuestionIndex = Math.floor(questionIndex);
+        if (!Number.isFinite(normalizedQuestionIndex) || normalizedQuestionIndex < 0) return;
+        const normalizedSubmittedDateKey = normalizeDateKey(submittedDateKey) || toKstDateKey();
+
         setWrongAnswers(prev => {
             const userKey = userId.toString();
             const prevAnswers = prev[userKey] || [];
-            if (prevAnswers.includes(questionIndex)) return prev;
+            if (prevAnswers.some((answer) => answer.questionIndex === normalizedQuestionIndex)) return prev;
+
+            const nextAnswer: WrongAnswerEntry = {
+                questionIndex: normalizedQuestionIndex,
+                submittedDateKey: normalizedSubmittedDateKey,
+            };
+            const updatedUserAnswers = [...prevAnswers, nextAnswer].sort((a, b) => a.questionIndex - b.questionIndex);
             const updated = {
                 ...prev,
-                [userKey]: [...prevAnswers, questionIndex],
+                [userKey]: updatedUserAnswers,
             };
-            setDoc(doc(db, 'global_state', 'wrongAnswers'), { [userKey]: updated[userKey] }, { merge: true }).catch(console.error);
+            setDoc(doc(db, 'global_state', 'wrongAnswers'), { [userKey]: updatedUserAnswers }, { merge: true }).catch(console.error);
             return updated;
         });
     };
@@ -988,7 +1133,7 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
             setSelectedUserId(incomingSelectedUserId ?? null);
             setScores(incomingScores as Record<string, number>);
             setUserPins(normalizedPins);
-            setWrongAnswers(incomingWrongAnswers as Record<string, number[]>);
+            setWrongAnswers(parseWrongAnswerRecord(incomingWrongAnswers));
             setPurchasedCoupons(incomingCoupons as Record<string, PurchasedCoupon[]>);
             setPhotoProofs(incomingPhotoProofs as Record<string, PhotoProofSubmission[]>);
             setWeekVisibility({

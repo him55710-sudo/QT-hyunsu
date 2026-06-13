@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { BookOpen, Camera, Check, ChevronLeft, ChevronRight, Lock, RotateCcw, Search, Star, Trophy, UserCheck, X } from 'lucide-react';
-import { ADMIN_PIN, WEEKS } from '../data/mockData';
+import { ADMIN_PIN, QUIZ_MONTHS, WEEKS } from '../data/mockData';
 import { useQuizContext, type DailyQtActivity } from '../context/QuizContext';
 import PinModal from '../components/PinModal';
 import ChangePinModal from '../components/ChangePinModal';
@@ -184,6 +184,12 @@ const formatSubmittedAtLabel = (submittedAt?: string, submittedAtMs?: number, su
     }).format(new Date(timestamp));
 };
 
+const getInitialQuizMonthId = () => {
+    const currentMonthId = toKstDateKey().slice(0, 7);
+    if (QUIZ_MONTHS.some((month) => month.id === currentMonthId)) return currentMonthId;
+    return QUIZ_MONTHS[QUIZ_MONTHS.length - 1]?.id || '2026-04';
+};
+
 export default function Home() {
     const navigate = useNavigate();
     const { selectedUserId, setSelectedUserId, markAttendance, scores, certifyPhotoProof, userPins, updatePin, isWeekPublic, users, addUser, getUserDailyActivity } = useQuizContext();
@@ -206,8 +212,11 @@ export default function Home() {
     const [selectedCalendarDateKey, setSelectedCalendarDateKey] = useState<string | null>(null);
     const [selectedProofIndex, setSelectedProofIndex] = useState(0);
     const [brokenImageUrls, setBrokenImageUrls] = useState<Record<string, true>>({});
+    const [activeQuizMonthId, setActiveQuizMonthId] = useState(getInitialQuizMonthId);
 
     const currentUser = users.find((u) => u.id === selectedUserId);
+    const activeQuizMonth = QUIZ_MONTHS.find((month) => month.id === activeQuizMonthId);
+    const quizWeeks = useMemo(() => WEEKS.filter((week) => week.monthId === activeQuizMonthId), [activeQuizMonthId]);
 
     const totalPoints = useMemo(() => {
         if (!selectedUserId) return 0;
@@ -611,8 +620,8 @@ export default function Home() {
                                             QT 인증
                                         </div>
                                     ) : hasAttendance ? (
-                                        <div className="w-full h-[34px] rounded-[8px] bg-white text-[#6B7280] text-[10px] font-black flex items-center justify-center border border-blue-100">
-                                            출석 완료
+                                        <div className="w-full h-[34px] rounded-[8px] bg-white text-[#5B6475] text-[9px] font-black tracking-tight flex items-center justify-center border border-blue-100 text-center">
+                                            출석
                                         </div>
                                     ) : (
                                         <div className="w-full h-[34px] rounded-[8px] bg-slate-50 border border-slate-100" />
@@ -638,8 +647,33 @@ export default function Home() {
                         <button onClick={() => navigate('/leaderboard')} className="text-[12px] text-[#0064FF] font-black hover:opacity-70 transition-opacity">명예의 전당</button>
                     </div>
 
+                    <div className="grid grid-cols-3 gap-2 mb-3">
+                        {QUIZ_MONTHS.map((month) => {
+                            const isActive = month.id === activeQuizMonthId;
+                            return (
+                                <button
+                                    key={month.id}
+                                    onClick={() => setActiveQuizMonthId(month.id)}
+                                    className={`rounded-[14px] border px-3 py-2.5 text-left transition-colors ${isActive
+                                        ? 'bg-[#0064FF] border-[#0064FF] text-white'
+                                        : 'bg-[#F8FAFC] border-slate-200 text-[#4E5968] hover:bg-blue-50'
+                                        }`}
+                                >
+                                    <p className={`text-[10px] font-black ${isActive ? 'text-blue-100' : 'text-[#8B95A1]'}`}>{month.label}</p>
+                                    <p className="text-[13px] font-black mt-0.5">{month.title}</p>
+                                </button>
+                            );
+                        })}
+                    </div>
+
+                    {activeQuizMonth && (
+                        <p className="text-[12px] text-[#8B95A1] font-bold mb-3">
+                            {activeQuizMonth.label} · {activeQuizMonth.title} 퀴즈
+                        </p>
+                    )}
+
                     <div className="flex flex-col gap-2">
-                        {WEEKS.map((week) => (
+                        {quizWeeks.map((week) => (
                             <button
                                 key={week.id}
                                 onClick={() => handleWeekClick(week.id)}
